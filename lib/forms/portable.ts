@@ -186,8 +186,8 @@ export function parseImport(input: string): ParseResult {
 
 function toPortable(f: FormField) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { id, options, ...rest } = f;
-  return { type: f.type, label: f.label, ...rest, ...(options ? { options: options.map((o) => o.label) } : {}) };
+  const { id, options, type, label, ...rest } = f;
+  return { type, label, ...rest, ...(options ? { options: options.map((o) => o.label) } : {}) };
 }
 
 /** Format ekspor = format impor (satu format untuk manusia dan AI). ID tidak diekspor. */

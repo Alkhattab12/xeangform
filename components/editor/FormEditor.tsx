@@ -313,6 +313,7 @@ export function FormEditor({ initial }: { initial: Initial }) {
         <Link href="/dashboard" className={smallBtn}>
           <ArrowLeft size={16} aria-hidden="true" /> Dashboard
         </Link>
+        <Link href={`/dashboard/forms/${initial.id}/responses`} className={smallBtn}>Respons</Link>
         <span className="nb-mono border-2 border-line px-2 py-1">{STATUS_LABEL[status]}</span>
         <p className="nb-mono" role="status" aria-live="polite">{SAVE_LABEL[save]}</p>
         {save === "error" && (

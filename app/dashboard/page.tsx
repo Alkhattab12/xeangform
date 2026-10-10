@@ -149,6 +149,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               </dl>
               <div className="mt-auto flex flex-wrap gap-2">
                 <Link href={`/dashboard/forms/${f.id}`} className="nb-btn min-h-10 px-3 py-2 text-sm">Buka</Link>
+                <Link href={`/dashboard/forms/${f.id}/responses`} className={small}>Respons ({f.form_submissions?.[0]?.count ?? 0})</Link>
                 <a href={`/dashboard/forms/${f.id}/export`} className={small}>Ekspor</a>
                 <form action={duplicateFormAction}>
                   <input type="hidden" name="id" value={f.id} />
