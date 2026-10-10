@@ -1,10 +1,20 @@
 import { newFieldId, newOptionId } from "./field-meta";
-import { FIELD_TYPES, FILE_CATEGORIES, formSchemaJson, type FieldType, type FileCategory, type FormField } from "./schema";
+import {
+  DEFAULT_SETTINGS,
+  FIELD_TYPES,
+  FILE_CATEGORIES,
+  formSchemaJson,
+  hasAnswerKey,
+  type FieldType,
+  type FileCategory,
+  type FormField,
+  type FormSettings,
+} from "./schema";
 
 export const MAX_IMPORT_BYTES = 500_000;
 const MAX_FIELDS = 100;
 
-export type ImportedForm = { title: string; description: string; fields: FormField[] };
+export type ImportedForm = { title: string; description: string; fields: FormField[]; settings: FormSettings };
 export type ParseResult =
   | { ok: true; form: ImportedForm; warnings: string[] }
   | { ok: false; errors: string[] };
@@ -114,6 +124,34 @@ function parseField(raw: unknown, n: number, warnings: string[], errors: string[
     if (type !== "dropdown" && raw.allowOther === true) f.allowOther = true;
   }
 
+  // Kunci jawaban kuis: "correct" (alias: answer, correctAnswer)
+  const correct = raw.correct ?? raw.answer ?? raw.correctAnswer;
+  if (correct !== undefined && correct !== null && correct !== "") {
+    const list = Array.isArray(correct) ? correct : [correct];
+    if (type === "radio" || type === "dropdown" || type === "checkbox") {
+      const wanted = list.map((c) => String(c).trim().toLowerCase());
+      const ids = (f.options ?? []).filter((o) => wanted.includes(o.label.trim().toLowerCase())).map((o) => o.id);
+      if (ids.length === 0) {
+        warnings.push(`Kolom ${n}: kunci jawaban tidak cocok dengan teks opsi mana pun, jadi soal tidak dinilai.`);
+      } else if (type === "checkbox") {
+        f.answerKey = { optionIds: ids };
+        if (ids.length < wanted.length) warnings.push(`Kolom ${n}: sebagian kunci tidak cocok dengan opsi dan diabaikan.`);
+      } else {
+        f.answerKey = { optionIds: [ids[0]] };
+        if (wanted.length > 1) warnings.push(`Kolom ${n}: pilihan tunggal hanya punya satu kunci. Memakai yang pertama.`);
+      }
+    } else if (type === "short_text") {
+      const texts = list.map((c) => String(c).trim().slice(0, 200)).filter(Boolean).slice(0, 20);
+      if (texts.length) f.answerKey = { text: texts };
+    } else if (type === "number") {
+      const v = num(list[0]);
+      if (v !== undefined) f.answerKey = { number: clamp(v, -1e12, 1e12) };
+      else warnings.push(`Kolom ${n}: kunci angka tidak valid.`);
+    } else {
+      warnings.push(`Kolom ${n}: tipe ${type} tidak mendukung kunci jawaban.`);
+    }
+  }
+
   if (type === "linear_scale") {
     const sc = isObj(raw.scale) ? raw.scale : raw;
     const min = (num(sc.min) ?? 1) <= 0 ? 0 : 1;
@@ -168,6 +206,12 @@ export function parseImport(input: string): ParseResult {
   const title = text(meta.title, 200);
   if (!title) warnings.push('Judul form tidak ada. Memakai "Form Tanpa Judul".');
   const description = text(meta.description, 2000) ?? "";
+  const rawSettings = isObj(meta.settings) ? meta.settings : {};
+  const settings: FormSettings = {
+    quiz: rawSettings.quiz === true,
+    allowTabSwitch: rawSettings.allowTabSwitch !== false,
+    oneResponsePerAccount: rawSettings.oneResponsePerAccount === true,
+  };
 
   const fields: FormField[] = [];
   rawFields.forEach((r, i) => {
@@ -180,23 +224,35 @@ export function parseImport(input: string): ParseResult {
     if (errors.length > 20) shown.push(`…dan ${errors.length - 20} kesalahan lain.`);
     return { ok: false, errors: shown };
   }
+  if (!settings.quiz && rawSettings.quiz === undefined && fields.some(hasAnswerKey)) {
+    settings.quiz = true;
+    warnings.push("Ada kunci jawaban, jadi mode kuis diaktifkan otomatis.");
+  }
   if (!formSchemaJson.safeParse({ fields }).success) return { ok: false, errors: ["Struktur hasil impor tidak valid."] };
-  return { ok: true, form: { title: title ?? "Form Tanpa Judul", description, fields }, warnings };
+  return { ok: true, form: { title: title ?? "Form Tanpa Judul", description, fields, settings }, warnings };
 }
 
 function toPortable(f: FormField) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { id, options, type, label, ...rest } = f;
-  return { type, label, ...rest, ...(options ? { options: options.map((o) => o.label) } : {}) };
+  const { id, options, type, label, answerKey, ...rest } = f;
+  const out: Record<string, unknown> = { type, label, ...rest, ...(options ? { options: options.map((o) => o.label) } : {}) };
+  if (answerKey && hasAnswerKey(f)) {
+    const labelOf = (oid: string) => options?.find((o) => o.id === oid)?.label ?? "";
+    if (type === "radio" || type === "dropdown") out.correct = labelOf(answerKey.optionIds?.[0] ?? "");
+    else if (type === "checkbox") out.correct = (answerKey.optionIds ?? []).map(labelOf);
+    else if (type === "short_text") out.correct = answerKey.text;
+    else if (type === "number") out.correct = answerKey.number;
+  }
+  return out;
 }
 
 /** Format ekspor = format impor (satu format untuk manusia dan AI). ID tidak diekspor. */
-export function buildExport(title: string, description: string, fields: FormField[]) {
+export function buildExport(title: string, description: string, fields: FormField[], settings: FormSettings = DEFAULT_SETTINGS) {
   return {
     format: "syamil-form",
     version: 1,
     exportedAt: new Date().toISOString(),
-    form: { title, description, fields: fields.map(toPortable) },
+    form: { title, description, settings, fields: fields.map(toPortable) },
   };
 }
 
@@ -234,6 +290,16 @@ PROPERTI KOLOM:
 - "scale": {"min": 1, "max": 5, "minLabel": "Tidak setuju", "maxLabel": "Setuju"} (linear_scale; min 0 atau 1, max 2-10)
 - "ratingMax": jumlah bintang 3-10 (rating)
 - "file": {"accept": ["pdf","image","document","spreadsheet"], "maxSizeMb": 10, "maxFiles": 1} (file)
+
+KUIS & PENGATURAN (opsional):
+- Di "form" boleh ada "settings": {"quiz": true, "allowTabSwitch": false, "oneResponsePerAccount": true}
+  quiz = dinilai otomatis; allowTabSwitch false = pindah tab/jendela dideteksi; oneResponsePerAccount = 1 akun hanya 1 kali mengisi.
+- Kunci jawaban pakai "correct" di dalam kolom:
+  radio atau dropdown: teks opsi yang benar, HARUS sama persis dengan salah satu isi "options". Contoh "correct": "XI"
+  checkbox: daftar teks opsi yang benar. Contoh "correct": ["Musik","Olahraga"]
+  short_text: daftar jawaban yang diterima. Contoh "correct": ["Jakarta"]
+  number: angka. Contoh "correct": 42
+- Kolom tanpa "correct" tidak ikut dinilai.
 
 CONTOH KOLOM:
 {"type":"short_text","label":"Nama lengkap","required":true}

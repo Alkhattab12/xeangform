@@ -12,6 +12,13 @@ export type FileCategory = (typeof FILE_CATEGORIES)[number];
 
 export type FormStatus = "draft" | "published" | "archived";
 
+/** Kunci jawaban kuis. Tidak pernah dikirim ke halaman publik. */
+export const answerKeySchema = z.object({
+  optionIds: z.array(z.string().min(1).max(40)).max(100).optional(),
+  text: z.array(z.string().max(200)).max(20).optional(),
+  number: z.number().min(-1e12).max(1e12).optional(),
+});
+
 export const fieldSchema = z.object({
   id: z.string().min(1).max(40).regex(/^[A-Za-z0-9_-]+$/),
   type: z.enum(FIELD_TYPES),
@@ -44,6 +51,7 @@ export const fieldSchema = z.object({
       maxFiles: z.number().int().min(1).max(10),
     })
     .optional(),
+  answerKey: answerKeySchema.optional(),
 });
 export type FormField = z.infer<typeof fieldSchema>;
 
@@ -57,11 +65,49 @@ export const formSchemaJson = z
     });
   });
 
+/** Pengaturan tingkat form (disimpan di forms.settings_json). */
+export const formSettingsSchema = z.object({
+  quiz: z.boolean().default(false),
+  allowTabSwitch: z.boolean().default(true),
+  oneResponsePerAccount: z.boolean().default(false),
+});
+export type FormSettings = z.infer<typeof formSettingsSchema>;
+export const DEFAULT_SETTINGS: FormSettings = { quiz: false, allowTabSwitch: true, oneResponsePerAccount: false };
+
+export function parseSettings(v: unknown): FormSettings {
+  const r = formSettingsSchema.safeParse(v ?? {});
+  return r.success ? r.data : DEFAULT_SETTINGS;
+}
+
+const GRADABLE = new Set<FieldType>(["radio", "dropdown", "checkbox", "short_text", "number"]);
+export const isGradable = (t: FieldType) => GRADABLE.has(t);
+
+/** Soal dinilai hanya jika kuncinya lengkap dan opsinya masih ada. */
+export function hasAnswerKey(f: FormField): boolean {
+  const k = f.answerKey;
+  if (!k || !GRADABLE.has(f.type)) return false;
+  const ids = k.optionIds ?? [];
+  const exists = (id: string) => (f.options ?? []).some((o) => o.id === id);
+  switch (f.type) {
+    case "radio":
+    case "dropdown":
+      return ids.length === 1 && exists(ids[0]);
+    case "checkbox":
+      return ids.length > 0 && ids.every(exists);
+    case "short_text":
+      return (k.text ?? []).some((t) => t.trim() !== "");
+    case "number":
+      return typeof k.number === "number";
+    default:
+      return false;
+  }
+}
+
 const LAYOUT_TYPES = new Set<FieldType>(["section", "paragraph", "divider"]);
 export const isInputType = (t: FieldType) => !LAYOUT_TYPES.has(t);
 
 /** Syarat minimal agar form boleh diterbitkan. Draft boleh belum lengkap. */
-export function publishIssues(fields: FormField[]): string[] {
+export function publishIssues(fields: FormField[], settings: FormSettings = DEFAULT_SETTINGS): string[] {
   const issues: string[] = [];
   if (!fields.some((f) => isInputType(f.type))) issues.push("Tambahkan minimal satu kolom pertanyaan.");
   fields.forEach((f, i) => {
@@ -75,5 +121,8 @@ export function publishIssues(fields: FormField[]): string[] {
     }
     if (f.type === "file" && (f.file?.accept.length ?? 0) < 1) issues.push(`${name}: pilih minimal satu tipe file.`);
   });
+  if (settings.quiz && !fields.some(hasAnswerKey)) {
+    issues.push("Mode kuis aktif, tapi belum ada soal yang punya kunci jawaban.");
+  }
   return issues;
 }

@@ -104,7 +104,12 @@ export function ImportForm() {
           <p className="nb-mono mb-2">Pratinjau</p>
           <h2 className="font-display text-3xl font-bold">{result.form.title}</h2>
           {result.form.description && <p className="mt-2">{result.form.description}</p>}
-          <p className="nb-mono mt-3">{result.form.fields.length} kolom</p>
+          <p className="nb-mono mt-3">
+            {result.form.fields.length} kolom
+            {result.form.settings.quiz ? " · kuis" : ""}
+            {!result.form.settings.allowTabSwitch ? " · pindah tab tidak boleh" : ""}
+            {result.form.settings.oneResponsePerAccount ? " · 1 respons per akun" : ""}
+          </p>
           <ol className="mt-4 space-y-2">
             {result.form.fields.slice(0, 30).map((f, i) => (
               <li key={f.id} className="flex gap-3 border-2 border-line p-2">

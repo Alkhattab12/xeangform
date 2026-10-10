@@ -1,5 +1,5 @@
 import type { createClient } from "@/lib/supabase/server";
-import { formatAnswer, type ResponseRow } from "./answers";
+import { formatAnswer, readMeta, type ResponseRow } from "./answers";
 import { isInputType, type FormField } from "./schema";
 
 type Db = Awaited<ReturnType<typeof createClient>>;
@@ -31,7 +31,7 @@ export function filtersToQuery(f: Filters): string {
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 function searchText(fields: FormField[], r: ResponseRow): string {
-  const parts = [r.id];
+  const parts = [r.id, r.meta.respondent?.email ?? "", r.meta.respondent?.name ?? ""];
   for (const f of fields) if (isInputType(f.type)) parts.push(formatAnswer(f, r.answers[f.id], "csv"));
   return parts.join(" \n ").toLowerCase();
 }
@@ -41,16 +41,17 @@ function searchText(fields: FormField[], r: ResponseRow): string {
  * Pencarian teks dilakukan setelah pemuatan, atas hingga `cap` respons terbaru/terlama.
  */
 export async function loadResponses(db: Db, formId: string, fields: FormField[], f: Filters, cap: number) {
-  let q = db.from("form_submissions").select("id,submitted_at,answers_json", { count: "exact" }).eq("form_id", formId);
+  let q = db.from("form_submissions").select("id,submitted_at,answers_json,metadata_json", { count: "exact" }).eq("form_id", formId);
   if (f.from) q = q.gte("submitted_at", `${f.from}T00:00:00+07:00`);
   if (f.to) q = q.lte("submitted_at", `${f.to}T23:59:59.999+07:00`);
   const { data, error, count } = await q.order("submitted_at", { ascending: f.sort === "lama" }).limit(cap);
 
-  const raw = (data ?? []) as unknown as { id: string; submitted_at: string; answers_json: unknown }[];
+  const raw = (data ?? []) as unknown as { id: string; submitted_at: string; answers_json: unknown; metadata_json: unknown }[];
   let rows: ResponseRow[] = raw.map((r) => ({
     id: r.id,
     submitted_at: r.submitted_at,
     answers: isObj(r.answers_json) ? r.answers_json : {},
+    meta: readMeta(r.metadata_json),
   }));
   if (f.q) {
     const needle = f.q.toLowerCase();

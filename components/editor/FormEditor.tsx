@@ -23,12 +23,13 @@ import { ArrowDown, ArrowLeft, ArrowUp, Copy, Download, GripVertical, Link2, Tra
 import { saveForm, setFormStatus, type SaveResult, type StatusResult } from "@/app/actions/forms";
 import { FIELD_META, createField, newFieldId, newOptionId } from "@/lib/forms/field-meta";
 import { buildExport } from "@/lib/forms/portable";
-import type { FieldType, FormField, FormStatus } from "@/lib/forms/schema";
+import { hasAnswerKey, isGradable, type FieldType, type FormField, type FormSettings, type FormStatus } from "@/lib/forms/schema";
 import { FieldLibrary } from "./FieldLibrary";
 import { FieldPreview } from "./FieldPreview";
 import { FieldSettings } from "./FieldSettings";
+import { FormSettingsPanel } from "./FormSettingsPanel";
 
-type Initial = { id: string; title: string; description: string; slug: string; status: FormStatus; fields: FormField[] };
+type Initial = { id: string; title: string; description: string; slug: string; status: FormStatus; fields: FormField[]; settings: FormSettings };
 type SaveState = "saved" | "dirty" | "saving" | "error";
 type Tab = "fields" | "canvas" | "settings";
 
@@ -45,6 +46,7 @@ type ItemProps = {
   field: FormField;
   index: number;
   total: number;
+  quiz: boolean;
   selected: boolean;
   onSelect: () => void;
   onOpenSettings: () => void;
@@ -90,6 +92,7 @@ function SortableItem(p: ItemProps) {
         >
           <p className="nb-mono mb-2">
             {String(p.index + 1).padStart(2, "0")} / {meta.label}
+            {p.quiz && isGradable(p.field.type) ? (hasAnswerKey(p.field) ? " · Kunci ✓" : " · Tanpa kunci") : ""}
           </p>
           <div className="pointer-events-none">
             <FieldPreview field={p.field} />
@@ -122,6 +125,7 @@ export function FormEditor({ initial }: { initial: Initial }) {
   const [title, setTitle] = useState(initial.title);
   const [description, setDescription] = useState(initial.description);
   const [fields, setFields] = useState<FormField[]>(initial.fields);
+  const [settings, setSettings] = useState<FormSettings>(initial.settings);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [status, setStatus] = useState<FormStatus>(initial.status);
   const [save, setSave] = useState<SaveState>("saved");
@@ -136,8 +140,8 @@ export function FormEditor({ initial }: { initial: Initial }) {
   );
 
   // ---------- Autosave (debounce 1,5 dtk, simpan berurutan) ----------
-  const latest = useRef({ title, description, fields });
-  latest.current = { title, description, fields };
+  const latest = useRef({ title, description, fields, settings });
+  latest.current = { title, description, fields, settings };
   const version = useRef(0);
   const dirty = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -153,6 +157,7 @@ export function FormEditor({ initial }: { initial: Initial }) {
         title: snap.title,
         description: snap.description,
         schema: { fields: snap.fields },
+        settings: snap.settings,
       });
     } catch {
       res = { ok: false, error: "Koneksi bermasalah. Perubahan belum tersimpan." };
@@ -211,6 +216,11 @@ export function FormEditor({ initial }: { initial: Initial }) {
   // ---------- Operasi kolom ----------
   const selected = fields.find((f) => f.id === selectedId) ?? null;
 
+  const changeSettings = (patch: Partial<FormSettings>) => {
+    setSettings((prev) => ({ ...prev, ...patch }));
+    markDirty();
+  };
+
   const patchField = (id: string, patch: Partial<FormField>) => {
     setFields((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)));
     markDirty();
@@ -226,7 +236,20 @@ export function FormEditor({ initial }: { initial: Initial }) {
     const i = fields.findIndex((f) => f.id === id);
     if (i < 0) return;
     const src = fields[i];
-    const copy: FormField = { ...src, id: newFieldId(), options: src.options?.map((o) => ({ ...o, id: newOptionId() })) };
+    const idMap = new Map<string, string>();
+    const newOptions = src.options?.map((o) => {
+      const nid = newOptionId();
+      idMap.set(o.id, nid);
+      return { ...o, id: nid };
+    });
+    const copy: FormField = {
+      ...src,
+      id: newFieldId(),
+      options: newOptions,
+      answerKey: src.answerKey
+        ? { ...src.answerKey, optionIds: src.answerKey.optionIds?.map((x) => idMap.get(x) ?? x) }
+        : undefined,
+    };
     const next = [...fields];
     next.splice(i + 1, 0, copy);
     setFields(next);
@@ -291,7 +314,7 @@ export function FormEditor({ initial }: { initial: Initial }) {
   }
 
   function exportJson() {
-    const payload = buildExport(title, description, fields);
+    const payload = buildExport(title, description, fields, settings);
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -422,6 +445,7 @@ export function FormEditor({ initial }: { initial: Initial }) {
                       field={f}
                       index={i}
                       total={fields.length}
+                      quiz={settings.quiz}
                       selected={f.id === selectedId}
                       onSelect={() => setSelectedId(f.id)}
                       onOpenSettings={() => {
@@ -441,15 +465,17 @@ export function FormEditor({ initial }: { initial: Initial }) {
 
         <aside aria-label="Pengaturan kolom" className={`${show("settings")} lg:sticky lg:top-24 lg:max-h-[calc(100dvh-7rem)] lg:self-start lg:overflow-y-auto`}>
           {selected ? (
-            <div className="nb-panel nb-panel-strong p-4">
-              <p className="nb-mono mb-4">{FIELD_META[selected.type].label} / {selected.id}</p>
-              <FieldSettings key={selected.id} field={selected} onChange={(patch) => patchField(selected.id, patch)} />
+            <div>
+              <button type="button" onClick={() => setSelectedId(null)} className={`${smallBtn} mb-3`}>
+                <ArrowLeft size={16} aria-hidden="true" /> Pengaturan form
+              </button>
+              <div className="nb-panel nb-panel-strong p-4">
+                <p className="nb-mono mb-4">{FIELD_META[selected.type].label} / {selected.id}</p>
+                <FieldSettings key={selected.id} field={selected} quiz={settings.quiz} onChange={(patch) => patchField(selected.id, patch)} />
+              </div>
             </div>
           ) : (
-            <div className="nb-panel p-4">
-              <p className="font-display font-bold">Pengaturan kolom</p>
-              <p className="mt-2 leading-relaxed">Pilih sebuah kolom di kanvas untuk mengatur judul, wajib diisi, opsi, dan validasi.</p>
-            </div>
+            <FormSettingsPanel settings={settings} onChange={changeSettings} />
           )}
         </aside>
       </div>

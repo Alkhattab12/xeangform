@@ -13,7 +13,9 @@ function cell(value: string, guard: boolean): string {
 
 const wib = (iso: string) => new Date(Date.parse(iso) + 7 * 3600 * 1000).toISOString().replace("T", " ").slice(0, 19);
 
-export function buildCsv(fields: FormField[], rows: ResponseRow[]): string {
+export type CsvOptions = { quiz?: boolean; proctor?: boolean; accounts?: boolean };
+
+export function buildCsv(fields: FormField[], rows: ResponseRow[], opts: CsvOptions = {}): string {
   const cols = fields.filter((f) => isInputType(f.type) && f.type !== "file");
 
   // Judul kolom = label; label kembar diberi nomor agar tidak ambigu
@@ -25,9 +27,17 @@ export function buildCsv(fields: FormField[], rows: ResponseRow[]): string {
     return n > 1 ? `${base} (${n})` : base;
   });
 
-  const lines = [["ID respons", "Waktu kirim (WIB)", ...headers].map((h) => cell(h, true)).join(",")];
+  const extra: string[] = [];
+  if (opts.accounts) extra.push("Akun (email)", "Nama akun");
+  if (opts.quiz) extra.push("Benar", "Total soal");
+  if (opts.proctor) extra.push("Pindah tab/jendela (kali)");
+
+  const lines = [["ID respons", "Waktu kirim (WIB)", ...extra, ...headers].map((h) => cell(h, true)).join(",")];
   for (const r of rows) {
     const cells = [cell(r.id, false), cell(wib(r.submitted_at), false)];
+    if (opts.accounts) cells.push(cell(r.meta.respondent?.email ?? "", true), cell(r.meta.respondent?.name ?? "", true));
+    if (opts.quiz) cells.push(r.meta.score ? String(r.meta.score.correct) : "", r.meta.score ? String(r.meta.score.total) : "");
+    if (opts.proctor) cells.push(r.meta.violations !== undefined ? String(r.meta.violations) : "");
     for (const f of cols) {
       const text = formatAnswer(f, r.answers[f.id], "csv");
       cells.push(cell(text, !isNumericField(f))); // angka (mis. -5) tidak diberi awalan

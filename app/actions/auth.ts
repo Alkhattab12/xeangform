@@ -82,12 +82,13 @@ export async function signUp(_prev: AuthState, fd: FormData): Promise<AuthState>
 
   const supabase = await createClient();
   const origin = await siteOrigin();
+  const next = safeNext(fd.get("next"));
   const { data, error } = await supabase.auth.signUp({
     email: parsed.data.email,
     password: parsed.data.password,
     options: {
       data: { display_name: parsed.data.displayName },
-      emailRedirectTo: `${origin}/auth/callback?next=/dashboard`,
+      emailRedirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}`,
     },
   });
 
@@ -101,7 +102,7 @@ export async function signUp(_prev: AuthState, fd: FormData): Promise<AuthState>
     return { error: "Pendaftaran gagal. Coba lagi sebentar lagi.", values };
   }
 
-  if (data.session) redirect("/dashboard"); // konfirmasi email dimatikan di Supabase
+  if (data.session) redirect(next); // konfirmasi email dimatikan di Supabase
 
   // Pesan sama untuk email baru maupun yang sudah terdaftar (tidak membocorkan keberadaan akun)
   return { message: `Kami mengirim tautan konfirmasi ke ${parsed.data.email}. Buka email itu dan klik tautannya untuk mengaktifkan akun.` };

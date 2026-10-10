@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { buildCsv } from "@/lib/forms/csv";
 import { loadResponses, parseFilters } from "@/lib/forms/responses";
-import { formSchemaJson } from "@/lib/forms/schema";
+import { formSchemaJson, parseSettings } from "@/lib/forms/schema";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +18,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (!user) return new Response("Belum masuk", { status: 401 });
 
   // RLS + filter owner: hanya form milik sendiri
-  const { data: form } = await supabase.from("forms").select("slug,schema_json").eq("id", id).eq("owner_id", user.id).maybeSingle();
+  const { data: form } = await supabase.from("forms").select("slug,schema_json,settings_json").eq("id", id).eq("owner_id", user.id).maybeSingle();
   if (!form) return new Response("Tidak ditemukan", { status: 404 });
 
   const parsed = formSchemaJson.safeParse(form.schema_json);
@@ -28,7 +28,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const res = await loadResponses(supabase, id, parsed.data.fields, filters, EXPORT_CAP);
   if (res.error) return new Response("Gagal memuat respons", { status: 500 });
 
-  const csv = buildCsv(parsed.data.fields, res.rows);
+  const settings = parseSettings(form.settings_json);
+  const csv = buildCsv(parsed.data.fields, res.rows, {
+    quiz: settings.quiz,
+    proctor: !settings.allowTabSwitch,
+    accounts: settings.oneResponsePerAccount,
+  });
   const stamp = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
   return new Response(csv, {
     headers: {

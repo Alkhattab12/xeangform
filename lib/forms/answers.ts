@@ -1,8 +1,31 @@
 import type { FormField } from "./schema";
 
-export type ResponseRow = { id: string; submitted_at: string; answers: Record<string, unknown> };
+export type ResponseMeta = {
+  score?: { correct: number; total: number };
+  violations?: number;
+  respondent?: { email?: string; name?: string };
+};
+export type ResponseRow = { id: string; submitted_at: string; answers: Record<string, unknown>; meta: ResponseMeta };
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** Membaca metadata respons secara defensif (skor, jumlah pindah tab, akun). */
+export function readMeta(raw: unknown): ResponseMeta {
+  const m: ResponseMeta = {};
+  if (!isObj(raw)) return m;
+  const sc = raw.score;
+  if (isObj(sc) && typeof sc.correct === "number" && typeof sc.total === "number") m.score = { correct: sc.correct, total: sc.total };
+  const vi = raw.violations;
+  if (isObj(vi) && typeof vi.count === "number") m.violations = vi.count;
+  const re = raw.respondent;
+  if (isObj(re)) {
+    m.respondent = {
+      email: typeof re.email === "string" ? re.email : undefined,
+      name: typeof re.name === "string" ? re.name : undefined,
+    };
+  }
+  return m;
+}
 
 export const isNumericField = (f: FormField) => f.type === "number" || f.type === "linear_scale" || f.type === "rating";
 

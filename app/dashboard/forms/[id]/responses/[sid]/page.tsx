@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { z } from "zod";
 import { deleteResponsesAction } from "@/app/actions/responses";
 import { ConfirmButton } from "@/components/dashboard/ConfirmButton";
-import { formatAnswer } from "@/lib/forms/answers";
+import { formatAnswer, readMeta } from "@/lib/forms/answers";
 import { formSchemaJson, isInputType } from "@/lib/forms/schema";
 import { createClient } from "@/lib/supabase/server";
 
@@ -26,7 +26,7 @@ export default async function ResponseDetailPage({
   const supabase = await createClient();
   const [formRes, subRes] = await Promise.all([
     supabase.from("forms").select("title,schema_json").eq("id", id).maybeSingle(),
-    supabase.from("form_submissions").select("id,submitted_at,answers_json").eq("id", sid).eq("form_id", id).maybeSingle(),
+    supabase.from("form_submissions").select("id,submitted_at,answers_json,metadata_json").eq("id", sid).eq("form_id", id).maybeSingle(),
   ]);
   if (!formRes.data || !subRes.data) notFound();
 
@@ -34,6 +34,7 @@ export default async function ResponseDetailPage({
   const fields = parsed.success ? parsed.data.fields : [];
   const answers = (typeof subRes.data.answers_json === "object" && subRes.data.answers_json !== null ? subRes.data.answers_json : {}) as Record<string, unknown>;
 
+  const meta = readMeta(subRes.data.metadata_json);
   const backQs = new URLSearchParams();
   for (const k of ["q", "from", "to", "sort", "page"]) {
     const v = Array.isArray(sp[k]) ? sp[k]![0] : sp[k];
@@ -49,6 +50,16 @@ export default async function ResponseDetailPage({
       <h1 className="mt-2 font-display text-[clamp(1.75rem,5vw,3rem)] font-bold">Detail respons</h1>
       <p className="nb-mono mt-3">{when} WIB</p>
       <p className="nb-mono mt-1 break-all">ID: {sid}</p>
+
+      {(meta.score || meta.respondent || meta.violations !== undefined) && (
+        <div className="nb-panel nb-panel-strong mt-6 p-4">
+          {meta.score && <p className="font-display text-2xl font-bold">Benar {meta.score.correct} dari {meta.score.total} soal</p>}
+          {meta.respondent && (
+            <p className="mt-2">Akun: {meta.respondent.name ? `${meta.respondent.name} · ` : ""}{meta.respondent.email ?? "-"}</p>
+          )}
+          {meta.violations !== undefined && <p className="mt-2">Berpindah tab/jendela: {meta.violations} kali</p>}
+        </div>
+      )}
 
       <dl className="mt-8 space-y-4">
         {fields.map((f) => {

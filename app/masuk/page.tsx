@@ -15,7 +15,7 @@ export default async function MasukPage({ searchParams }: { searchParams: Promis
         <>
           <p>
             Belum punya akun?{" "}
-            <Link href="/daftar" className="underline underline-offset-4">Daftar gratis</Link>
+            <Link href={sp.next ? `/daftar?next=${encodeURIComponent(sp.next)}` : "/daftar"} className="underline underline-offset-4">Daftar gratis</Link>
           </p>
           <p className="mt-2">
             <Link href="/lupa-password" className="underline underline-offset-4">Lupa kata sandi?</Link>

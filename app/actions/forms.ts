@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { customAlphabet } from "nanoid";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { formSchemaJson, publishIssues, type FormStatus } from "@/lib/forms/schema";
+import { formSchemaJson, formSettingsSchema, parseSettings, publishIssues, type FormStatus } from "@/lib/forms/schema";
 
 const makeSlug = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 10);
 const idSchema = z.string().uuid();
@@ -44,6 +44,7 @@ const saveSchema = z.object({
   title: z.string().max(200),
   description: z.string().max(2000),
   schema: formSchemaJson,
+  settings: formSettingsSchema,
 });
 
 export async function saveForm(id: string, input: unknown): Promise<SaveResult> {
@@ -63,6 +64,7 @@ export async function saveForm(id: string, input: unknown): Promise<SaveResult> 
       title: parsed.data.title.trim() || "Form Tanpa Judul",
       description: parsed.data.description.trim() || null,
       schema_json: parsed.data.schema,
+      settings_json: parsed.data.settings,
     })
     .eq("id", id)
     .eq("owner_id", user.id)
@@ -84,14 +86,14 @@ export async function setFormStatus(id: string, status: FormStatus): Promise<Sta
   if (status === "published") {
     const { data: row, error: e1 } = await supabase
       .from("forms")
-      .select("schema_json")
+      .select("schema_json,settings_json")
       .eq("id", id)
       .eq("owner_id", user.id)
       .maybeSingle();
     if (e1 || !row) return { ok: false, error: "Form tidak ditemukan." };
     const parsed = formSchemaJson.safeParse(row.schema_json);
     if (!parsed.success) return { ok: false, error: "Struktur form rusak. Buka editor lalu simpan ulang." };
-    const issues = publishIssues(parsed.data.fields);
+    const issues = publishIssues(parsed.data.fields, parseSettings(row.settings_json));
     if (issues.length) {
       const more = issues.length > 2 ? ` (+${issues.length - 2} masalah lain)` : "";
       return { ok: false, error: issues.slice(0, 2).join(" ") + more };

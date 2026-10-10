@@ -1,10 +1,13 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import type { ReactNode } from "react";
+import { GateCard } from "@/components/public/GateCard";
 import { PublicForm } from "@/components/public/PublicForm";
-import { getPublicForm } from "@/lib/forms/public";
+import { findPriorSubmission, getPublicForm } from "@/lib/forms/public";
+import { createClient } from "@/lib/supabase/server";
 
-export const dynamic = "force-dynamic"; // unpublish langsung berlaku
+export const dynamic = "force-dynamic"; // unpublish & status pengisian langsung berlaku
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
@@ -17,11 +20,34 @@ export default async function PublicFormPage({ params }: { params: Promise<{ slu
   const form = await getPublicForm(slug);
   if (!form) notFound(); // draft, arsip, atau tidak ada: respons sama (tidak membocorkan keberadaan draft)
 
+  // 1 respons per akun: wajib login; akun yang sudah mengisi ditolak
+  let gate: ReactNode = null;
+  if (form.settings.oneResponsePerAccount) {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      gate = <GateCard kind="login" slug={slug} title={form.title} />;
+    } else {
+      const prior = await findPriorSubmission(form.id, user.id);
+      if (prior) gate = <GateCard kind="done" slug={slug} title={form.title} score={form.settings.quiz ? prior.score : null} />;
+    }
+  }
+
   return (
     <div className="min-h-dvh">
       <main className="mx-auto max-w-2xl px-4 py-8 sm:py-12">
-        <PublicForm slug={slug} title={form.title} description={form.description} fields={form.fields} />
-        <p className="nb-mono mt-8 text-center">
+        {gate ?? (
+          <PublicForm
+            slug={slug}
+            title={form.title}
+            description={form.description}
+            fields={form.fields}
+            settings={form.settings}
+          />
+        )}
+        <p className="nb-mono mt-10 text-center">
           <Link href="/" className="underline underline-offset-4">Dibuat dengan Syamil Form</Link>
         </p>
       </main>

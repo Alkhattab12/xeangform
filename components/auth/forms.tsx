@@ -37,12 +37,13 @@ export function LoginForm({ next, linkError }: { next?: string; linkError?: bool
   );
 }
 
-export function RegisterForm() {
+export function RegisterForm({ next }: { next?: string }) {
   const [state, action] = useActionState<AuthState, FormData>(signUp, null);
   const fe = state?.fieldErrors ?? {};
   return (
     <form action={action} noValidate className="space-y-6">
       <Banner state={state} />
+      {next && <input type="hidden" name="next" value={next} />}
       <AuthField id="displayName" label="Nama" autoComplete="name" defaultValue={state?.values?.displayName} error={fe.displayName} />
       <AuthField id="email" label="Email" type="email" autoComplete="email" defaultValue={state?.values?.email} error={fe.email} />
       <AuthField id="password" label="Kata sandi" type="password" autoComplete="new-password" hint="Minimal 8 karakter" error={fe.password} />

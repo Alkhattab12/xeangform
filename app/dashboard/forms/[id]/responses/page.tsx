@@ -144,7 +144,12 @@ export default async function ResponsesPage({
                     <li key={r.id} className="nb-panel flex items-start gap-3 p-4">
                       <input type="checkbox" form="bulk" name="ids" value={r.id} aria-label={`Pilih respons ${when}`} className="mt-1 h-5 w-5 shrink-0 accent-[#3457ff]" />
                       <Link href={`${base}/${r.id}${qs ? `?${qs}` : ""}`} className="min-w-0 flex-1">
-                        <span className="nb-mono block">{when}</span>
+                        <span className="nb-mono block">
+                          {when}
+                          {r.meta.score ? ` · Benar ${r.meta.score.correct}/${r.meta.score.total}` : ""}
+                          {r.meta.violations ? ` · Pindah tab ${r.meta.violations}×` : ""}
+                        </span>
+                        {r.meta.respondent?.email && <span className="nb-mono block">{r.meta.respondent.email}</span>}
                         {preview.length === 0 ? (
                           <span className="mt-1 block opacity-70">(tidak ada jawaban yang terisi)</span>
                         ) : (

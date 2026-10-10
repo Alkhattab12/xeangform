@@ -2,9 +2,9 @@
 
 import { ArrowDown, ArrowUp, Plus, X } from "lucide-react";
 import { newOptionId } from "@/lib/forms/field-meta";
-import { FILE_CATEGORIES, type FileCategory, type FormField } from "@/lib/forms/schema";
+import { FILE_CATEGORIES, hasAnswerKey, isGradable, type FileCategory, type FormField } from "@/lib/forms/schema";
 
-type Props = { field: FormField; onChange: (patch: Partial<FormField>) => void };
+type Props = { field: FormField; onChange: (patch: Partial<FormField>) => void; quiz?: boolean };
 
 const TEXTY = new Set<string>(["short_text", "long_text", "email", "phone", "number", "url"]);
 const CHOICE = new Set<string>(["radio", "checkbox", "dropdown"]);
@@ -27,7 +27,7 @@ function toNum(s: string): number | undefined {
   return Number.isFinite(n) ? Math.min(1e12, Math.max(-1e12, n)) : undefined;
 }
 
-export function FieldSettings({ field, onChange }: Props) {
+export function FieldSettings({ field, onChange, quiz = false }: Props) {
   const t = field.type;
   const id = (s: string) => `${field.id}-${s}`;
 
@@ -38,6 +38,16 @@ export function FieldSettings({ field, onChange }: Props) {
   const scale = field.scale ?? { min: 1, max: 5 };
   const file = field.file ?? { accept: ["pdf", "image"] as FileCategory[], maxSizeMb: 10, maxFiles: 1 };
   const setFile = (p: Partial<typeof file>) => onChange({ file: { ...file, ...p } });
+  const key: NonNullable<FormField["answerKey"]> = field.answerKey ?? {};
+  const removeOpt = (i: number) => {
+    const gone = options[i]?.id;
+    const patch: Partial<FormField> = { options: options.filter((_, j) => j !== i) };
+    if (gone && key.optionIds?.includes(gone)) {
+      const rest = key.optionIds.filter((x) => x !== gone);
+      patch.answerKey = rest.length ? { optionIds: rest } : undefined;
+    }
+    onChange(patch);
+  };
 
   const setOpt = (i: number, label: string) => onChange({ options: options.map((o, j) => (j === i ? { ...o, label } : o)) });
   const moveOpt = (i: number, d: -1 | 1) => {
@@ -117,7 +127,7 @@ export function FieldSettings({ field, onChange }: Props) {
                 <input aria-label={`Opsi ${i + 1}`} className="nb-input" value={o.label} maxLength={200} onChange={(e) => setOpt(i, e.target.value)} />
                 <button type="button" aria-label={`Naikkan opsi ${i + 1}`} disabled={i === 0} onClick={() => moveOpt(i, -1)} className="flex h-11 w-9 shrink-0 items-center justify-center border-2 border-line disabled:opacity-40"><ArrowUp size={16} aria-hidden="true" /></button>
                 <button type="button" aria-label={`Turunkan opsi ${i + 1}`} disabled={i === options.length - 1} onClick={() => moveOpt(i, 1)} className="flex h-11 w-9 shrink-0 items-center justify-center border-2 border-line disabled:opacity-40"><ArrowDown size={16} aria-hidden="true" /></button>
-                <button type="button" aria-label={`Hapus opsi ${i + 1}`} onClick={() => onChange({ options: options.filter((_, j) => j !== i) })} className="flex h-11 w-9 shrink-0 items-center justify-center border-2 border-line"><X size={16} aria-hidden="true" /></button>
+                <button type="button" aria-label={`Hapus opsi ${i + 1}`} onClick={() => removeOpt(i)} className="flex h-11 w-9 shrink-0 items-center justify-center border-2 border-line"><X size={16} aria-hidden="true" /></button>
               </li>
             ))}
           </ul>
@@ -210,6 +220,88 @@ export function FieldSettings({ field, onChange }: Props) {
             </div>
           </div>
         </div>
+      )}
+
+      {quiz && isGradable(t) && (
+        <fieldset className="border-t-2 border-line pt-4">
+          <legend className={lbl}>Kunci jawaban</legend>
+          {(t === "radio" || t === "dropdown") && (
+            <ul className="space-y-1">
+              {options.map((o) => (
+                <li key={o.id}>
+                  <label className="flex min-h-11 cursor-pointer items-center gap-3">
+                    <input
+                      type="radio"
+                      name={id("key")}
+                      className="h-5 w-5 shrink-0 accent-[#3457ff]"
+                      checked={key.optionIds?.[0] === o.id}
+                      onChange={() => onChange({ answerKey: { optionIds: [o.id] } })}
+                    />
+                    {o.label || "(opsi kosong)"}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
+          {t === "checkbox" && (
+            <ul className="space-y-1">
+              {options.map((o) => (
+                <li key={o.id}>
+                  <label className="flex min-h-11 cursor-pointer items-center gap-3">
+                    <input
+                      type="checkbox"
+                      className="h-5 w-5 shrink-0 accent-[#3457ff]"
+                      checked={(key.optionIds ?? []).includes(o.id)}
+                      onChange={(e) => {
+                        const cur = key.optionIds ?? [];
+                        const next = e.target.checked ? [...cur, o.id] : cur.filter((x) => x !== o.id);
+                        onChange({ answerKey: next.length ? { optionIds: next } : undefined });
+                      }}
+                    />
+                    {o.label || "(opsi kosong)"}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
+          {t === "short_text" && (
+            <div>
+              <label htmlFor={id("keytext")} className="mb-1 block text-sm font-bold">Jawaban yang dianggap benar (satu per baris)</label>
+              <textarea
+                id={id("keytext")}
+                rows={3}
+                className="nb-input"
+                defaultValue={(key.text ?? []).join("\n")}
+                onChange={(e) => {
+                  const lines = e.target.value.split("\n").map((x) => x.trim().slice(0, 200)).filter(Boolean).slice(0, 20);
+                  onChange({ answerKey: lines.length ? { text: lines } : undefined });
+                }}
+              />
+              <p className="mt-1 text-sm">Huruf besar/kecil dan spasi ganda diabaikan.</p>
+            </div>
+          )}
+          {t === "number" && (
+            <div>
+              <label htmlFor={id("keynum")} className="mb-1 block text-sm font-bold">Jawaban benar (angka)</label>
+              <input
+                id={id("keynum")}
+                type="number"
+                className="nb-input"
+                defaultValue={key.number ?? ""}
+                onChange={(e) => {
+                  const n = toNum(e.target.value);
+                  onChange({ answerKey: n === undefined ? undefined : { number: n } });
+                }}
+              />
+            </div>
+          )}
+          {(t === "radio" || t === "dropdown" || t === "checkbox") && field.answerKey && (
+            <button type="button" onClick={() => onChange({ answerKey: undefined })} className="nb-btn nb-btn-ghost mt-2 min-h-10 px-3 py-2 text-sm">
+              Hapus kunci
+            </button>
+          )}
+          <p className="nb-mono mt-3">{hasAnswerKey(field) ? "Soal ini dinilai" : "Belum ada kunci: soal tidak ikut dinilai"}</p>
+        </fieldset>
       )}
     </div>
   );
