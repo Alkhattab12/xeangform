@@ -58,10 +58,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   const [list, forms, published, responses, files] = await Promise.all([
     filter.status ? base.eq("status", filter.status) : base.neq("status", "archived"),
-    supabase.from("forms").select("id", { count: "exact", head: true }),
-    supabase.from("forms").select("id", { count: "exact", head: true }).eq("status", "published"),
-    supabase.from("form_submissions").select("id", { count: "exact", head: true }),
-    supabase.from("submission_files").select("id", { count: "exact", head: true }),
+    supabase.from("forms").select("id", { count: "exact" }).limit(1),
+    supabase.from("forms").select("id", { count: "exact" }).eq("status", "published").limit(1),
+    supabase.from("form_submissions").select("id", { count: "exact" }).limit(1),
+    supabase.from("submission_files").select("id", { count: "exact" }).limit(1),
   ]);
   const val = (r: { count: number | null; error: unknown }) => (r.error ? null : (r.count ?? 0));
   const rows = (list.data ?? []) as unknown as FormRow[];
@@ -78,9 +78,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <h1 className="font-display text-[clamp(2.25rem,7vw,4.5rem)] font-bold">
           {greeting()}, {session?.displayName}.
         </h1>
-        <form action={createForm}>
-          <SubmitButton pendingLabel="Membuat…">Buat Form Baru</SubmitButton>
-        </form>
+        <div className="flex flex-wrap items-center gap-3">
+          <Link href="/dashboard/import" className="nb-btn nb-btn-ghost">Impor Form</Link>
+          <form action={createForm}>
+            <SubmitButton pendingLabel="Membuat…">Buat Form Baru</SubmitButton>
+          </form>
+        </div>
       </div>
 
       {errorMsg && (
@@ -146,6 +149,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               </dl>
               <div className="mt-auto flex flex-wrap gap-2">
                 <Link href={`/dashboard/forms/${f.id}`} className="nb-btn min-h-10 px-3 py-2 text-sm">Buka</Link>
+                <a href={`/dashboard/forms/${f.id}/export`} className={small}>Ekspor</a>
                 <form action={duplicateFormAction}>
                   <input type="hidden" name="id" value={f.id} />
                   <button type="submit" className={small}>Duplikat</button>

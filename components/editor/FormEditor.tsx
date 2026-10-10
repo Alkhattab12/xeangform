@@ -19,9 +19,10 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ArrowDown, ArrowLeft, ArrowUp, Copy, GripVertical, Link2, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Copy, Download, GripVertical, Link2, Trash2 } from "lucide-react";
 import { saveForm, setFormStatus, type SaveResult, type StatusResult } from "@/app/actions/forms";
 import { FIELD_META, createField, newFieldId, newOptionId } from "@/lib/forms/field-meta";
+import { buildExport } from "@/lib/forms/portable";
 import type { FieldType, FormField, FormStatus } from "@/lib/forms/schema";
 import { FieldLibrary } from "./FieldLibrary";
 import { FieldPreview } from "./FieldPreview";
@@ -289,6 +290,21 @@ export function FormEditor({ initial }: { initial: Initial }) {
     }
   }
 
+  function exportJson() {
+    const payload = buildExport(title, description, fields);
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const base = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "form";
+    a.href = url;
+    a.download = `${base}.syamil-form.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    setNotice({ kind: "ok", text: "File JSON diunduh." });
+  }
+
   const show = (t: Tab) => `${tab === t ? "block" : "hidden"} lg:block`;
 
   return (
@@ -308,6 +324,9 @@ export function FormEditor({ initial }: { initial: Initial }) {
               <Link2 size={16} aria-hidden="true" /> Salin tautan
             </button>
           )}
+          <button type="button" onClick={exportJson} className={smallBtn}>
+            <Download size={16} aria-hidden="true" /> Ekspor
+          </button>
           <button type="button" onClick={() => void flush()} disabled={save === "saved" || save === "saving"} className={smallBtn}>
             Simpan
           </button>
