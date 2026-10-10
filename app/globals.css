@@ -1,0 +1,182 @@
+@import "tailwindcss";
+
+/* ================= Design tokens ================= */
+:root {
+  /* Palet merek */
+  --paper: #f7f4ec;
+  --ink: #171717;
+  --lime: #d7ff38;
+  --cobalt: #3457ff;
+  --orange: #ff6b35;
+  --lavender: #c9b8ff;
+  --white: #ffffff;
+
+  /* Semantik (berubah mengikuti tema) */
+  --bg: var(--paper);
+  --fg: var(--ink);
+  --surface: var(--white);
+  --line: var(--ink);
+  --shadow-color: var(--ink);
+  --accent: var(--lime);
+  --on-accent: #171717; /* teks di atas lime/oranye selalu gelap */
+
+  /* Struktur */
+  --bw: 2px;
+  --bw-strong: 3px;
+  --shadow-x: 5px;
+  --shadow-y: 5px;
+  --radius: 0px;
+}
+
+:root[data-theme="dark"] {
+  --bg: #14130f;
+  --fg: #f7f4ec;
+  --surface: #1e1c16;
+  --line: #f7f4ec;
+  --shadow-color: #d7ff38;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14130f;
+    --fg: #f7f4ec;
+    --surface: #1e1c16;
+    --line: #f7f4ec;
+    --shadow-color: #d7ff38;
+  }
+}
+
+/* Mapping ke utilitas Tailwind: bg-paper, text-ink, bg-accent, font-display, dst. */
+@theme inline {
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-lime: var(--lime);
+  --color-cobalt: var(--cobalt);
+  --color-orange: var(--orange);
+  --color-lavender: var(--lavender);
+  --color-bg: var(--bg);
+  --color-fg: var(--fg);
+  --color-surface: var(--surface);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --font-display: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+}
+
+@layer base {
+/* ================= Base ================= */
+html {
+  background: var(--bg);
+}
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3, h4 {
+  font-family: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+:focus-visible {
+  outline: 3px solid var(--cobalt);
+  outline-offset: 2px;
+}
+}
+
+@layer components {
+/* ================= Komponen Neo-Brutalist ================= */
+.nb-panel {
+  background: var(--surface);
+  border: var(--bw) solid var(--line);
+}
+.nb-panel-strong {
+  border-width: var(--bw-strong);
+}
+/* Bayangan keras — pakai hanya untuk elemen penting */
+.nb-shadow {
+  box-shadow: var(--shadow-x) var(--shadow-y) 0 var(--shadow-color);
+}
+
+.nb-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 44px; /* target sentuh */
+  padding: 0.6rem 1.15rem;
+  font-family: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+  color: var(--on-accent);
+  background: var(--accent);
+  border: var(--bw) solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 4px 4px 0 var(--shadow-color);
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+.nb-btn:hover {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 var(--shadow-color);
+}
+.nb-btn:active {
+  transform: translate(4px, 4px);
+  box-shadow: 0 0 0 var(--shadow-color);
+}
+.nb-btn:disabled,
+.nb-btn[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: 4px 4px 0 var(--shadow-color);
+}
+.nb-btn-ink {
+  background: var(--fg);
+  color: var(--bg);
+}
+.nb-btn-ghost {
+  background: var(--surface);
+  color: var(--fg);
+}
+
+.nb-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.6rem 0.8rem;
+  color: var(--fg);
+  background: var(--surface);
+  border: var(--bw) solid var(--line);
+  border-radius: var(--radius);
+  font: inherit;
+}
+.nb-input::placeholder {
+  color: color-mix(in srgb, var(--fg) 55%, transparent);
+}
+
+/* Label teknis (ID form, metadata, timestamp) */
+.nb-mono {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Pola dekoratif */
+.nb-checker {
+  background-image: conic-gradient(var(--fg) 25%, transparent 0 50%, var(--fg) 0 75%, transparent 0);
+  background-size: 16px 16px;
+}
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
