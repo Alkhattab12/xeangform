@@ -31,25 +31,38 @@ export const isNumericField = (f: FormField) => f.type === "number" || f.type ==
 
 const optLabel = (f: FormField, id: string) => f.options?.find((o) => o.id === id)?.label ?? "(opsi sudah dihapus)";
 
+/** Label pilihan yang dipilih (radio/dropdown/checkbox), satu per elemen. */
+export function choiceLabels(f: FormField, v: unknown): string[] {
+  if (!isObj(v)) return [];
+  if (f.type === "radio" || f.type === "dropdown") {
+    if (typeof v.optionId === "string") return [optLabel(f, v.optionId)];
+    if (typeof v.other === "string" && v.other) return [`Lainnya: ${v.other}`];
+    return [];
+  }
+  if (f.type === "checkbox") {
+    const parts = (Array.isArray(v.optionIds) ? v.optionIds : [])
+      .filter((x): x is string => typeof x === "string")
+      .map((id) => optLabel(f, id));
+    if (typeof v.other === "string" && v.other) parts.push(`Lainnya: ${v.other}`);
+    return parts;
+  }
+  return [];
+}
+
+/** Untuk tampilan lencana: array label untuk kolom pilihan, null untuk tipe lain. */
+export function answerChips(f: FormField, v: unknown): string[] | null {
+  if (f.type === "radio" || f.type === "dropdown" || f.type === "checkbox") return choiceLabels(f, v);
+  return null;
+}
+
 /** Mengubah jawaban tersimpan (kode opsi, objek) menjadi teks yang bisa dibaca. */
 export function formatAnswer(f: FormField, v: unknown, mode: "ui" | "csv" = "ui"): string {
   if (v === undefined || v === null) return "";
   switch (f.type) {
     case "radio":
-    case "dropdown": {
-      const o = isObj(v) ? v : {};
-      if (typeof o.optionId === "string") return optLabel(f, o.optionId);
-      if (typeof o.other === "string" && o.other) return `Lainnya: ${o.other}`;
-      return "";
-    }
-    case "checkbox": {
-      const o = isObj(v) ? v : {};
-      const parts = (Array.isArray(o.optionIds) ? o.optionIds : [])
-        .filter((x): x is string => typeof x === "string")
-        .map((id) => optLabel(f, id));
-      if (typeof o.other === "string" && o.other) parts.push(`Lainnya: ${o.other}`);
-      return parts.join("; "); // pemisah tetap: titik koma + spasi
-    }
+    case "dropdown":
+    case "checkbox":
+      return choiceLabels(f, v).join("; "); // pemisah tetap: titik koma + spasi
     case "consent":
       return v === true ? "Ya" : "Tidak";
     case "rating":

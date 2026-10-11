@@ -93,6 +93,15 @@ function Control({ field }: { field: FormField }) {
 }
 
 export function FieldPreview({ field }: { field: FormField }) {
+  if (field.type === "page_break") {
+    return (
+      <div className="border-y-[3px] border-dashed border-line py-3 text-center">
+        <p className="nb-mono">— Halaman baru —</p>
+        {field.label && <p className="mt-1 font-display text-xl font-bold">{field.label}</p>}
+        {field.description && <p className="mt-1 text-sm">{field.description}</p>}
+      </div>
+    );
+  }
   if (field.type === "divider") return <hr className="border-t-[3px] border-line" />;
   if (field.type === "section") {
     return (

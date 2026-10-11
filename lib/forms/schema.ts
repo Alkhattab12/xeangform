@@ -3,7 +3,7 @@ import { z } from "zod";
 export const FIELD_TYPES = [
   "short_text", "long_text", "email", "phone", "number", "url",
   "radio", "checkbox", "dropdown", "linear_scale", "rating",
-  "date", "time", "file", "section", "paragraph", "divider", "consent",
+  "date", "time", "file", "section", "paragraph", "divider", "page_break", "consent",
 ] as const;
 export type FieldType = (typeof FIELD_TYPES)[number];
 
@@ -18,6 +18,24 @@ export const answerKeySchema = z.object({
   text: z.array(z.string().max(200)).max(20).optional(),
   number: z.number().min(-1e12).max(1e12).optional(),
 });
+
+const hex = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+
+/** Pilihan huruf yang diizinkan (tidak ada font/CSS bebas dari pengguna). */
+export const FONT_KEYS = ["grotesk", "rounded", "serif", "futuristic", "mono"] as const;
+export type FontKey = (typeof FONT_KEYS)[number];
+
+/** Gaya per soal. Hanya nilai terbatas; bukan CSS bebas. */
+export const fieldStyleSchema = z.object({
+  bg: hex.optional(),
+  fg: hex.optional(),
+  line: hex.optional(),
+  radius: z.number().int().min(0).max(32).optional(),
+  shadow: z.number().int().min(0).max(12).optional(),
+  font: z.enum(FONT_KEYS).optional(),
+  labelSize: z.enum(["sm", "md", "lg"]).optional(),
+});
+export type FieldStyle = z.infer<typeof fieldStyleSchema>;
 
 export const fieldSchema = z.object({
   id: z.string().min(1).max(40).regex(/^[A-Za-z0-9_-]+$/),
@@ -52,6 +70,7 @@ export const fieldSchema = z.object({
     })
     .optional(),
   answerKey: answerKeySchema.optional(),
+  style: fieldStyleSchema.optional(),
 });
 export type FormField = z.infer<typeof fieldSchema>;
 
@@ -79,6 +98,33 @@ export function parseSettings(v: unknown): FormSettings {
   return r.success ? r.data : DEFAULT_SETTINGS;
 }
 
+export const THEME_PRESETS = ["unik", "keren", "abstrak", "neo", "imut", "cooking", "galaxy", "kebumian", "biologi", "sosial"] as const;
+export type ThemePreset = (typeof THEME_PRESETS)[number];
+export const DECOR_KEYS = ["none", "dots", "grid", "stars", "shapes", "strata", "cells", "bubbles"] as const;
+export type DecorKey = (typeof DECOR_KEYS)[number];
+
+/** Tema form (disimpan di forms.theme_json). Kosong ({}) = tampilan bawaan. */
+export const formThemeSchema = z.object({
+  preset: z.enum(THEME_PRESETS),
+  bg: hex.optional(),
+  surface: hex.optional(),
+  fg: hex.optional(),
+  accent: hex.optional(),
+  radius: z.number().int().min(0).max(32).optional(),
+  border: z.number().int().min(1).max(5).optional(),
+  shadow: z.number().int().min(0).max(12).optional(),
+  font: z.enum(FONT_KEYS).optional(),
+  decor: z.enum(DECOR_KEYS).optional(),
+});
+export type FormTheme = z.infer<typeof formThemeSchema>;
+
+/** theme_json kosong atau tidak valid -> null (tampilan bawaan). */
+export function themeFromJson(v: unknown): FormTheme | null {
+  if (!v || typeof v !== "object" || Array.isArray(v) || Object.keys(v as object).length === 0) return null;
+  const r = formThemeSchema.safeParse(v);
+  return r.success ? r.data : null;
+}
+
 const GRADABLE = new Set<FieldType>(["radio", "dropdown", "checkbox", "short_text", "number"]);
 export const isGradable = (t: FieldType) => GRADABLE.has(t);
 
@@ -103,7 +149,7 @@ export function hasAnswerKey(f: FormField): boolean {
   }
 }
 
-const LAYOUT_TYPES = new Set<FieldType>(["section", "paragraph", "divider"]);
+const LAYOUT_TYPES = new Set<FieldType>(["section", "paragraph", "divider", "page_break"]);
 export const isInputType = (t: FieldType) => !LAYOUT_TYPES.has(t);
 
 /** Syarat minimal agar form boleh diterbitkan. Draft boleh belum lengkap. */
@@ -111,7 +157,7 @@ export function publishIssues(fields: FormField[], settings: FormSettings = DEFA
   const issues: string[] = [];
   if (!fields.some((f) => isInputType(f.type))) issues.push("Tambahkan minimal satu kolom pertanyaan.");
   fields.forEach((f, i) => {
-    if (f.type === "divider") return;
+    if (f.type === "divider" || f.type === "page_break") return;
     const name = `Kolom ${i + 1}`;
     if (!f.label.trim()) issues.push(`${name} belum punya judul.`);
     if (f.type === "radio" || f.type === "checkbox" || f.type === "dropdown") {

@@ -3,18 +3,21 @@ import {
   DEFAULT_SETTINGS,
   FIELD_TYPES,
   FILE_CATEGORIES,
+  fieldStyleSchema,
   formSchemaJson,
+  formThemeSchema,
   hasAnswerKey,
   type FieldType,
   type FileCategory,
   type FormField,
   type FormSettings,
+  type FormTheme,
 } from "./schema";
 
 export const MAX_IMPORT_BYTES = 500_000;
 const MAX_FIELDS = 100;
 
-export type ImportedForm = { title: string; description: string; fields: FormField[]; settings: FormSettings };
+export type ImportedForm = { title: string; description: string; fields: FormField[]; settings: FormSettings; theme: FormTheme | null };
 export type ParseResult =
   | { ok: true; form: ImportedForm; warnings: string[] }
   | { ok: false; errors: string[] };
@@ -33,6 +36,7 @@ const ALIASES: Record<string, FieldType> = {
   heading: "section",
   info: "paragraph", text_block: "paragraph",
   separator: "divider", hr: "divider",
+  page: "page_break", new_page: "page_break", pagebreak: "page_break", section_break: "page_break", halaman: "page_break",
   agreement: "consent", terms: "consent",
 };
 
@@ -83,10 +87,16 @@ function parseField(raw: unknown, n: number, warnings: string[], errors: string[
   }
 
   const label = text(raw.label ?? raw.question ?? raw.title, type === "paragraph" ? 2000 : 300) ?? "";
-  if (!label && type !== "divider") warnings.push(`Kolom ${n} (${type}) belum punya judul. Isi di editor sebelum menerbitkan.`);
+  if (!label && type !== "divider" && type !== "page_break") warnings.push(`Kolom ${n} (${type}) belum punya judul. Isi di editor sebelum menerbitkan.`);
 
-  const required = type === "consent" ? raw.required !== false : raw.required === true || raw.required === "true";
-  const f: FormField = { id: newFieldId(), type, label, required: type === "divider" ? false : required };
+  // "Wajib" diterima dalam beberapa bentuk yang sering dipakai AI: true, "true", "ya", "yes", 1, "wajib"
+  const reqRaw = raw.required ?? raw.mandatory ?? raw.wajib;
+  const truthy =
+    reqRaw === true ||
+    reqRaw === 1 ||
+    (typeof reqRaw === "string" && ["true", "ya", "yes", "y", "1", "wajib"].includes(reqRaw.trim().toLowerCase()));
+  const required = type === "consent" ? reqRaw === undefined || truthy : truthy;
+  const f: FormField = { id: newFieldId(), type, label, required: type === "divider" || type === "page_break" ? false : required };
 
   if (type !== "paragraph" && type !== "divider") {
     const d = text(raw.description ?? raw.helpText ?? raw.help, 1000);
@@ -178,6 +188,11 @@ function parseField(raw: unknown, n: number, warnings: string[], errors: string[
       maxFiles: clamp(Math.trunc(num(fo.maxFiles) ?? 1), 1, 10),
     };
   }
+  if (raw.style !== undefined && type !== "page_break" && type !== "divider") {
+    const st = fieldStyleSchema.safeParse(raw.style);
+    if (st.success && Object.keys(st.data).length > 0) f.style = st.data;
+    else warnings.push(`Kolom ${n}: gaya ("style") tidak valid dan diabaikan.`);
+  }
   return f;
 }
 
@@ -206,6 +221,12 @@ export function parseImport(input: string): ParseResult {
   const title = text(meta.title, 200);
   if (!title) warnings.push('Judul form tidak ada. Memakai "Form Tanpa Judul".');
   const description = text(meta.description, 2000) ?? "";
+  let theme: FormTheme | null = null;
+  if (meta.theme !== undefined && meta.theme !== null) {
+    const th = formThemeSchema.safeParse(meta.theme);
+    if (th.success) theme = th.data;
+    else warnings.push("Tema pada file tidak valid dan diabaikan.");
+  }
   const rawSettings = isObj(meta.settings) ? meta.settings : {};
   const settings: FormSettings = {
     quiz: rawSettings.quiz === true,
@@ -229,7 +250,7 @@ export function parseImport(input: string): ParseResult {
     warnings.push("Ada kunci jawaban, jadi mode kuis diaktifkan otomatis.");
   }
   if (!formSchemaJson.safeParse({ fields }).success) return { ok: false, errors: ["Struktur hasil impor tidak valid."] };
-  return { ok: true, form: { title: title ?? "Form Tanpa Judul", description, fields, settings }, warnings };
+  return { ok: true, form: { title: title ?? "Form Tanpa Judul", description, fields, settings, theme }, warnings };
 }
 
 function toPortable(f: FormField) {
@@ -247,12 +268,18 @@ function toPortable(f: FormField) {
 }
 
 /** Format ekspor = format impor (satu format untuk manusia dan AI). ID tidak diekspor. */
-export function buildExport(title: string, description: string, fields: FormField[], settings: FormSettings = DEFAULT_SETTINGS) {
+export function buildExport(
+  title: string,
+  description: string,
+  fields: FormField[],
+  settings: FormSettings = DEFAULT_SETTINGS,
+  theme: FormTheme | null = null,
+) {
   return {
     format: "syamil-form",
     version: 1,
     exportedAt: new Date().toISOString(),
-    form: { title, description, settings, fields: fields.map(toPortable) },
+    form: { title, description, settings, ...(theme ? { theme } : {}), fields: fields.map(toPortable) },
   };
 }
 
@@ -275,13 +302,14 @@ FORMAT:
 }
 
 JENIS KOLOM ("type"):
-short_text, long_text, email, phone, number, url, radio, checkbox, dropdown, linear_scale, rating, date, time, file, section, paragraph, divider, consent
+short_text, long_text, email, phone, number, url, radio, checkbox, dropdown, linear_scale, rating, date, time, file, section, paragraph, divider, page_break, consent
 Catatan: "paragraph" adalah teks informasi (bukan kolom jawaban). Untuk jawaban panjang pakai "long_text".
+"page_break" memulai halaman baru (form bertahap). "label" = judul halaman, opsional. Kolom setelahnya masuk ke halaman itu.
 
 PROPERTI KOLOM:
 - "label": teks pertanyaan (wajib, kecuali divider)
 - "description": keterangan tambahan (opsional)
-- "required": true atau false
+- "required": true (wajib dijawab) atau false (opsional). Tulis true untuk setiap pertanyaan yang harus dijawab.
 - "placeholder": contoh isian (opsional, untuk kolom teks)
 - "options": daftar teks pilihan, contoh ["A","B","C"] (WAJIB untuk radio, checkbox, dropdown)
 - "allowOther": true untuk menambah opsi "Lainnya" (radio/checkbox)
@@ -294,6 +322,7 @@ PROPERTI KOLOM:
 KUIS & PENGATURAN (opsional):
 - Di "form" boleh ada "settings": {"quiz": true, "allowTabSwitch": false, "oneResponsePerAccount": true}
   quiz = dinilai otomatis; allowTabSwitch false = pindah tab/jendela dideteksi; oneResponsePerAccount = 1 akun hanya 1 kali mengisi.
+- "form" juga boleh punya "theme": {"preset": "galaxy"}. Pilihan preset: unik, keren, abstrak, neo, imut, cooking, galaxy, kebumian, biologi, sosial.
 - Kunci jawaban pakai "correct" di dalam kolom:
   radio atau dropdown: teks opsi yang benar, HARUS sama persis dengan salah satu isi "options". Contoh "correct": "XI"
   checkbox: daftar teks opsi yang benar. Contoh "correct": ["Musik","Olahraga"]

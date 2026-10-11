@@ -2,6 +2,7 @@
 
 import { ArrowDown, ArrowUp, Plus, X } from "lucide-react";
 import { newOptionId } from "@/lib/forms/field-meta";
+import { FieldStylePanel } from "./FieldStylePanel";
 import { FILE_CATEGORIES, hasAnswerKey, isGradable, type FileCategory, type FormField } from "@/lib/forms/schema";
 
 type Props = { field: FormField; onChange: (patch: Partial<FormField>) => void; quiz?: boolean };
@@ -33,7 +34,7 @@ export function FieldSettings({ field, onChange, quiz = false }: Props) {
 
   if (t === "divider") return <p className="leading-relaxed">Pembatas tidak punya pengaturan. Hapus atau pindahkan lewat kanvas.</p>;
 
-  const isLayout = t === "section" || t === "paragraph";
+  const isLayout = t === "section" || t === "paragraph" || t === "page_break";
   const options = field.options ?? [];
   const scale = field.scale ?? { min: 1, max: 5 };
   const file = field.file ?? { accept: ["pdf", "image"] as FileCategory[], maxSizeMb: 10, maxFiles: 1 };
@@ -62,7 +63,7 @@ export function FieldSettings({ field, onChange, quiz = false }: Props) {
     <div className="space-y-5">
       <div>
         <label htmlFor={id("label")} className={lbl}>
-          {t === "paragraph" ? "Isi teks" : t === "section" ? "Judul bagian" : t === "consent" ? "Teks persetujuan" : "Pertanyaan"}
+          {t === "paragraph" ? "Isi teks" : t === "page_break" ? "Judul halaman (opsional)" : t === "section" ? "Judul bagian" : t === "consent" ? "Teks persetujuan" : "Pertanyaan"}
         </label>
         {t === "paragraph" || t === "consent" ? (
           <textarea id={id("label")} rows={3} className="nb-input" value={field.label} maxLength={2000} onChange={(e) => onChange({ label: e.target.value })} />
@@ -302,6 +303,15 @@ export function FieldSettings({ field, onChange, quiz = false }: Props) {
           )}
           <p className="nb-mono mt-3">{hasAnswerKey(field) ? "Soal ini dinilai" : "Belum ada kunci: soal tidak ikut dinilai"}</p>
         </fieldset>
+      )}
+
+      {t !== "page_break" && (
+        <details className="border-t-2 border-line pt-4">
+          <summary className="cursor-pointer font-display font-bold">Gaya soal ini{field.style ? " ✓" : ""}</summary>
+          <div className="mt-4">
+            <FieldStylePanel style={field.style} onChange={(s) => onChange({ style: s })} />
+          </div>
+        </details>
       )}
     </div>
   );

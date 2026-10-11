@@ -5,6 +5,7 @@ import { SubmitButton } from "@/components/auth/SubmitButton";
 import { Starburst } from "@/components/brand/Shapes";
 import { ConfirmButton } from "@/components/dashboard/ConfirmButton";
 import { MetricCard } from "@/components/dashboard/MetricCard";
+import { PendingButton } from "@/components/ui/PendingButton";
 import { getSessionUser } from "@/lib/auth/session";
 import type { FormStatus } from "@/lib/forms/schema";
 import { createClient } from "@/lib/supabase/server";
@@ -153,17 +154,17 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                 <a href={`/dashboard/forms/${f.id}/export`} className={small}>Ekspor</a>
                 <form action={duplicateFormAction}>
                   <input type="hidden" name="id" value={f.id} />
-                  <button type="submit" className={small}>Duplikat</button>
+                  <PendingButton className={small}>Duplikat</PendingButton>
                 </form>
                 <form action={setStatusAction}>
                   <input type="hidden" name="id" value={f.id} />
                   <input type="hidden" name="status" value={f.status === "published" ? "draft" : "published"} />
-                  <button type="submit" className={small}>{f.status === "published" ? "Tarik kembali" : "Terbitkan"}</button>
+                  <PendingButton className={small}>{f.status === "published" ? "Tarik kembali" : "Terbitkan"}</PendingButton>
                 </form>
                 <form action={setStatusAction}>
                   <input type="hidden" name="id" value={f.id} />
                   <input type="hidden" name="status" value={f.status === "archived" ? "draft" : "archived"} />
-                  <button type="submit" className={small}>{f.status === "archived" ? "Pulihkan" : "Arsipkan"}</button>
+                  <PendingButton className={small}>{f.status === "archived" ? "Pulihkan" : "Arsipkan"}</PendingButton>
                 </form>
                 <form action={deleteFormAction}>
                   <input type="hidden" name="id" value={f.id} />

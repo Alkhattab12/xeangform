@@ -1,15 +1,11 @@
 "use client";
 
+import { PendingButton } from "@/components/ui/PendingButton";
+
 export function ConfirmButton({ message, className, children }: { message: string; className?: string; children: React.ReactNode }) {
   return (
-    <button
-      type="submit"
-      className={className}
-      onClick={(e) => {
-        if (!window.confirm(message)) e.preventDefault();
-      }}
-    >
+    <PendingButton className={className} confirm={message}>
       {children}
-    </button>
+    </PendingButton>
   );
 }

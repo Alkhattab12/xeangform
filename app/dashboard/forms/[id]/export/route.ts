@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { buildExport } from "@/lib/forms/portable";
-import { formSchemaJson, parseSettings } from "@/lib/forms/schema";
+import { formSchemaJson, parseSettings, themeFromJson } from "@/lib/forms/schema";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +18,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   // RLS + filter owner: hanya form milik sendiri
   const { data } = await supabase
     .from("forms")
-    .select("title,description,schema_json,settings_json")
+    .select("title,description,schema_json,settings_json,theme_json")
     .eq("id", id)
     .eq("owner_id", user.id)
     .maybeSingle();
@@ -27,7 +27,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const parsed = formSchemaJson.safeParse(data.schema_json);
   if (!parsed.success) return new Response("Struktur form rusak", { status: 500 });
 
-  const payload = buildExport(data.title as string, (data.description ?? "") as string, parsed.data.fields, parseSettings(data.settings_json));
+  const payload = buildExport(data.title as string, (data.description ?? "") as string, parsed.data.fields, parseSettings(data.settings_json), themeFromJson(data.theme_json));
   const base = (data.title as string).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "form";
   return new Response(JSON.stringify(payload, null, 2), {
     headers: {

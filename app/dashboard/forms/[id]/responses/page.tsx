@@ -141,7 +141,7 @@ export default async function ResponsesPage({
                     .slice(0, 3);
                   const when = fmt.format(new Date(r.submitted_at));
                   return (
-                    <li key={r.id} className="nb-panel flex items-start gap-3 p-4">
+                    <li key={r.id} className="nb-panel nb-panel-strong nb-shadow flex items-start gap-3 p-4">
                       <input type="checkbox" form="bulk" name="ids" value={r.id} aria-label={`Pilih respons ${when}`} className="mt-1 h-5 w-5 shrink-0 accent-[#3457ff]" />
                       <Link href={`${base}/${r.id}${qs ? `?${qs}` : ""}`} className="min-w-0 flex-1">
                         <span className="nb-mono block">
@@ -154,8 +154,9 @@ export default async function ResponsesPage({
                           <span className="mt-1 block opacity-70">(tidak ada jawaban yang terisi)</span>
                         ) : (
                           preview.map(({ f, text }) => (
-                            <span key={f.id} className="mt-1 block truncate">
-                              <span className="font-bold">{f.label || "(tanpa judul)"}:</span> {text}
+                            <span key={f.id} className="mt-3 block">
+                              <span className="nb-mono block truncate opacity-70">{f.label || "(tanpa judul)"}</span>
+                              <span className="mt-1 inline-block max-w-full truncate border-2 border-line bg-accent/40 px-2 py-0.5 align-top font-semibold">{text}</span>
                             </span>
                           ))
                         )}

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { importForm } from "@/app/actions/import";
+import { useBusyOverlay } from "@/components/ui/LoadingProvider";
 import { FIELD_META } from "@/lib/forms/field-meta";
 import { AI_PROMPT, MAX_IMPORT_BYTES, parseImport } from "@/lib/forms/portable";
 
@@ -10,6 +11,7 @@ export function ImportForm() {
   const router = useRouter();
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  useBusyOverlay(busy);
   const [serverErrors, setServerErrors] = useState<string[]>([]);
   const [note, setNote] = useState("");
   const result = useMemo(() => (text.trim() ? parseImport(text) : null), [text]);

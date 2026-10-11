@@ -1,7 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { formSchemaJson, parseSettings, type FormField, type FormSettings } from "./schema";
+import { formSchemaJson, parseSettings, themeFromJson, type FormField, type FormSettings, type FormTheme } from "./schema";
 
 export type PublicForm = {
   id: string; // hanya dipakai di server (cek riwayat pengisian); jangan diteruskan ke komponen client
@@ -9,6 +9,7 @@ export type PublicForm = {
   description: string;
   fields: FormField[];
   settings: FormSettings;
+  theme: FormTheme | null;
 };
 
 /** Hanya form berstatus "published". Kunci jawaban DIBUANG sebelum dikirim ke browser. */
@@ -17,7 +18,7 @@ export const getPublicForm = cache(async (slug: string): Promise<PublicForm | nu
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("forms")
-    .select("id,title,description,schema_json,settings_json")
+    .select("id,title,description,schema_json,settings_json,theme_json")
     .eq("slug", slug)
     .eq("status", "published")
     .maybeSingle();
@@ -35,6 +36,7 @@ export const getPublicForm = cache(async (slug: string): Promise<PublicForm | nu
       return copy;
     }),
     settings: parseSettings(data.settings_json),
+    theme: themeFromJson(data.theme_json),
   };
 });
 

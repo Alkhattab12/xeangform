@@ -31,6 +31,7 @@ export async function importForm(text: string): Promise<ImportResult> {
         description: parsed.form.description || null,
         schema_json: { fields: parsed.form.fields },
         settings_json: parsed.form.settings,
+        theme_json: parsed.form.theme ?? {},
         status: "draft", // hasil impor selalu draft; kamu cek dulu sebelum menerbitkan
       })
       .select("id")

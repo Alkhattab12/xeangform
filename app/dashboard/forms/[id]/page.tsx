@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { z } from "zod";
 import { FormEditor } from "@/components/editor/FormEditor";
-import { formSchemaJson, parseSettings, type FormStatus } from "@/lib/forms/schema";
+import { formSchemaJson, parseSettings, themeFromJson, type FormStatus } from "@/lib/forms/schema";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Editor form" };
@@ -15,7 +15,7 @@ export default async function EditorPage({ params }: { params: Promise<{ id: str
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("forms")
-    .select("id,title,description,slug,status,schema_json,settings_json")
+    .select("id,title,description,slug,status,schema_json,settings_json,theme_json")
     .eq("id", id)
     .maybeSingle(); // RLS: hanya form milik user yang terbaca
 
@@ -33,6 +33,7 @@ export default async function EditorPage({ params }: { params: Promise<{ id: str
         status: data.status as FormStatus,
         fields: parsed.success ? parsed.data.fields : [],
         settings: parseSettings(data.settings_json),
+        theme: themeFromJson(data.theme_json),
       }}
     />
   );

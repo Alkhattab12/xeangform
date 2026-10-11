@@ -19,10 +19,12 @@ export const FIELD_META: Record<FieldType, { label: string }> = {
   section: { label: "Judul bagian" },
   paragraph: { label: "Teks informasi" },
   divider: { label: "Pembatas" },
+  page_break: { label: "Halaman baru" },
   consent: { label: "Persetujuan" },
 };
 
 export const FIELD_GROUPS: { title: string; types: FieldType[] }[] = [
+  { title: "Halaman", types: ["page_break"] },
   { title: "Teks & data", types: ["short_text", "long_text", "email", "phone", "number", "url", "date", "time"] },
   { title: "Pilihan", types: ["radio", "checkbox", "dropdown"] },
   { title: "Penilaian", types: ["linear_scale", "rating"] },
@@ -34,7 +36,7 @@ const DEFAULT_LABEL: Record<FieldType, string> = {
   number: "Angka", url: "Tautan (URL)", radio: "Pertanyaan baru", checkbox: "Pertanyaan baru",
   dropdown: "Pertanyaan baru", linear_scale: "Pertanyaan baru", rating: "Beri penilaian", date: "Tanggal",
   time: "Waktu", file: "Unggah file", section: "Judul bagian", paragraph: "Tulis teks informasi di sini.",
-  divider: "", consent: "Saya menyetujui syarat dan ketentuan.",
+  divider: "", page_break: "", consent: "Saya menyetujui syarat dan ketentuan.",
 };
 
 export const newFieldId = () => `f_${nanoid(8)}`;

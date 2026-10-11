@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { submitResponse, type QuizResult } from "@/app/actions/submit";
-import type { FormField, FormSettings } from "@/lib/forms/schema";
+import { useBusyOverlay } from "@/components/ui/LoadingProvider";
+import { firstErrorFieldId, pageIndexOf, splitPages } from "@/lib/forms/pages";
+import { isInputType, type FormField, type FormSettings } from "@/lib/forms/schema";
+import { fieldStyleVars, labelSizeClass } from "@/lib/forms/theme";
 import { OTHER, validateAnswers } from "@/lib/forms/validate";
 import { GateCard } from "./GateCard";
 
@@ -21,18 +24,29 @@ const TEXT_INPUTS: Record<string, { type: string; inputMode?: "text" | "decimal"
   number: { type: "number", inputMode: "decimal" },
 };
 
-// Jarak: kartu soal diberi padding lega; jarak antar kartu 24px (HP) / 32px (layar lebar)
-const card = "nb-panel nb-panel-strong p-5 sm:p-7";
+// Jarak: kartu soal berpadding lega; jarak antar kartu 24px (HP) / 32px (layar lebar)
+const card = "nb-panel nb-panel-strong scroll-mt-24 p-5 sm:p-7";
+const errRing = "outline-4 outline-solid outline-offset-2 outline-[color:var(--danger)]";
 const choice = "flex min-h-11 cursor-pointer items-center gap-3";
 const box = "h-5 w-5 shrink-0 accent-[#3457ff]";
 const chip =
-  "flex h-12 min-w-12 items-center justify-center border-2 border-line bg-surface px-2 font-display font-bold peer-checked:bg-accent peer-checked:text-ink peer-focus-visible:outline-3 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-solid peer-focus-visible:outline-cobalt";
+  "flex h-12 min-w-12 items-center justify-center border-2 border-line bg-surface px-2 font-display font-bold peer-checked:bg-accent peer-checked:text-[color:var(--on-accent)] peer-focus-visible:outline-3 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-solid peer-focus-visible:outline-cobalt";
 const groupCls = "m-0 min-w-0 border-0 p-0";
-const legendCls = "mb-3 block p-0 font-display text-lg font-bold";
-const labelCls = "mb-3 block font-display text-lg font-bold";
+
+const prefersReduced = () => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+/** Menggulir ke kartu soal lalu memberi fokus ke kontrolnya. */
+function focusField(fid: string) {
+  const cardEl = document.getElementById(`card-${fid}`);
+  const el = document.getElementById(`q-${fid}`);
+  (cardEl ?? el)?.scrollIntoView({ behavior: prefersReduced() ? "auto" : "smooth", block: "center" });
+  el?.focus({ preventScroll: true });
+}
 
 export function PublicForm({ slug, title, description, fields, settings }: Props) {
   const enforce = !settings.allowTabSwitch;
+  const pages = useMemo(() => splitPages(fields), [fields]);
+  const [pageIdx, setPageIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [status, setStatus] = useState<Status>("idle");
@@ -40,6 +54,12 @@ export function PublicForm({ slug, title, description, fields, settings }: Props
   const [hp, setHp] = useState("");
   const [result, setResult] = useState<QuizResult | null>(null);
   const keyRef = useRef<string | null>(null);
+  const pendingFocus = useRef<string | null>(null);
+  const firstRender = useRef(true);
+  useBusyOverlay(status === "submitting");
+
+  const isLast = pageIdx >= pages.length - 1;
+  const current = pages[Math.min(pageIdx, pages.length - 1)];
 
   // ---- Deteksi pindah tab / minimize (hanya jika "Tidak boleh") ----
   const [vCount, setVCount] = useState(0);
@@ -76,6 +96,21 @@ export function PublicForm({ slug, title, description, fields, settings }: Props
     if (warn) okRef.current?.focus();
   }, [warn]);
 
+  // Setelah pindah halaman: fokus ke soal bermasalah (jika ada), kalau tidak gulir ke atas
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    const target = pendingFocus.current;
+    pendingFocus.current = null;
+    const raf = requestAnimationFrame(() => {
+      if (target) focusField(target);
+      else window.scrollTo({ top: 0, behavior: prefersReduced() ? "auto" : "smooth" });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [pageIdx]);
+
   const set = (id: string, value: unknown) => {
     setAnswers((p) => ({ ...p, [id]: value }));
     setErrors((p) => {
@@ -86,20 +121,53 @@ export function PublicForm({ slug, title, description, fields, settings }: Props
     });
   };
 
-  function focusFirst(errs: Record<string, string>) {
-    const first = fields.find((f) => errs[f.id]);
-    if (first) document.getElementById(`q-${first.id}`)?.focus();
+  /** Tampilkan error dan arahkan ke soal pertama yang bermasalah (pindah halaman jika perlu). */
+  function revealErrors(errs: Record<string, string>, scope: FormField[]) {
+    setErrors(errs);
+    const id = firstErrorFieldId(scope, errs);
+    if (!id) return;
+    const pi = pageIndexOf(pages, id);
+    if (pi >= 0 && pi !== pageIdx) {
+      pendingFocus.current = id;
+      setPageIdx(pi);
+    } else {
+      requestAnimationFrame(() => focusField(id));
+    }
+  }
+
+  function jumpTo(fid: string) {
+    const pi = pageIndexOf(pages, fid);
+    if (pi >= 0 && pi !== pageIdx) {
+      pendingFocus.current = fid;
+      setPageIdx(pi);
+    } else {
+      focusField(fid);
+    }
+  }
+
+  function goNext() {
+    const r = validateAnswers(current.fields, answers);
+    if (!r.ok) {
+      revealErrors(r.errors, current.fields);
+      return;
+    }
+    setErrors({});
+    setPageIdx((i) => Math.min(i + 1, pages.length - 1));
   }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (status === "submitting") return; // cegah kirim ganda
     setFormError("");
+    if (!isLast) {
+      goNext(); // Enter di halaman tengah = Lanjut, bukan kirim
+      return;
+    }
 
+    // Semua halaman divalidasi ulang: soal wajib tidak boleh terlewat
     const check = validateAnswers(fields, answers);
     if (!check.ok) {
-      setErrors(check.errors);
-      focusFirst(check.errors);
+      revealErrors(check.errors, fields);
       return;
     }
     setErrors({});
@@ -127,10 +195,7 @@ export function PublicForm({ slug, title, description, fields, settings }: Props
         return;
       }
       setStatus("idle");
-      if (res.fieldErrors) {
-        setErrors(res.fieldErrors);
-        focusFirst(res.fieldErrors);
-      }
+      if (res.fieldErrors) revealErrors(res.fieldErrors, fields);
       if (res.error) setFormError(res.error);
     } catch {
       setStatus("idle");
@@ -147,6 +212,7 @@ export function PublicForm({ slug, title, description, fields, settings }: Props
     countRef.current = 0;
     events.current = [];
     setVCount(0);
+    setPageIdx(0);
     setStatus("idle");
   }
 
@@ -155,12 +221,12 @@ export function PublicForm({ slug, title, description, fields, settings }: Props
 
   if (status === "done") {
     return (
-      <div className="nb-panel nb-panel-strong nb-shadow bg-accent p-6 text-ink sm:p-8" role="status">
+      <div className="nb-panel nb-panel-strong nb-shadow bg-accent p-6 text-[color:var(--on-accent)] sm:p-8" role="status">
         <p className="nb-mono mb-3">Terkirim</p>
         <h1 className="font-display text-4xl font-bold">Terima kasih!</h1>
         <p className="mt-5 leading-relaxed">Jawabanmu untuk &quot;{title}&quot; sudah tersimpan.</p>
         {result && result.total > 0 && (
-          <p className="mt-8 border-t-[3px] border-ink pt-6 font-display text-4xl font-bold">
+          <p className="mt-8 border-t-[3px] border-current pt-6 font-display text-4xl font-bold">
             Benar {result.correct} dari {result.total} soal
           </p>
         )}
@@ -179,37 +245,50 @@ export function PublicForm({ slug, title, description, fields, settings }: Props
       </>
     ) : null;
 
+  const errorFields = fields.filter((f) => isInputType(f.type) && errors[f.id]);
+
   function renderField(f: FormField) {
+    const styleVars = fieldStyleVars(f.style);
     if (f.type === "divider") return <hr key={f.id} className="my-1 border-t-[3px] border-line sm:my-2" />;
     if (f.type === "section") {
       return (
-        <div key={f.id} className="px-1 pt-4 sm:pt-6">
+        <div key={f.id} className={`px-1 pt-4 sm:pt-6 ${f.style?.bg ? "nb-panel p-5" : ""}`} style={styleVars}>
           <h2 className="font-display text-3xl font-bold">{f.label}</h2>
           {f.description && <p className="mt-3 leading-relaxed">{f.description}</p>}
         </div>
       );
     }
-    if (f.type === "paragraph") return <p key={f.id} className="whitespace-pre-wrap px-1 leading-relaxed">{f.label}</p>;
+    if (f.type === "paragraph") {
+      return (
+        <p key={f.id} className={`whitespace-pre-wrap px-1 leading-relaxed ${f.style?.bg ? "nb-panel p-5" : ""}`} style={styleVars}>
+          {f.label}
+        </p>
+      );
+    }
 
     const id = `q-${f.id}`;
     const err = errors[f.id];
     const describedBy = [f.description ? `${id}-desc` : null, err ? `${id}-error` : null].filter(Boolean).join(" ") || undefined;
     const invalid = err ? true : undefined;
+    const lblCls = `mb-3 block font-display font-bold ${labelSizeClass(f.style?.labelSize)}`;
     const wrap = (content: React.ReactNode) => (
-      <div key={f.id} className={card}>
+      <div key={f.id} id={`card-${f.id}`} className={`${card} ${err ? errRing : ""}`} style={styleVars}>
         {content}
       </div>
     );
     const desc = f.description ? <p id={`${id}-desc`} className="-mt-1 mb-4 text-sm leading-relaxed">{f.description}</p> : null;
     const errEl = err ? (
-      <p id={`${id}-error`} role="alert" className="mt-4 font-bold text-[#c62f00] dark:text-orange">{err}</p>
+      <p id={`${id}-error`} role="alert" className="mt-4 flex items-start gap-2 font-bold text-[color:var(--danger)]">
+        <span aria-hidden="true">⚠</span>
+        <span>{err}</span>
+      </p>
     ) : null;
 
     if (f.type === "radio") {
       const v = (answers[f.id] as ChoiceAnswer | undefined) ?? {};
       return wrap(
         <fieldset id={id} tabIndex={-1} aria-describedby={describedBy} aria-invalid={invalid} className={groupCls}>
-          <legend className={legendCls}>{f.label}{reqMark(f)}</legend>
+          <legend className={`${lblCls} p-0`}>{f.label}{reqMark(f)}</legend>
           {desc}
           <div className="space-y-1">
             {(f.options ?? []).map((o) => (
@@ -241,7 +320,7 @@ export function PublicForm({ slug, title, description, fields, settings }: Props
       const toggle = (oid: string, on: boolean) => set(f.id, { ...v, optionIds: on ? [...ids, oid] : ids.filter((x) => x !== oid) });
       return wrap(
         <fieldset id={id} tabIndex={-1} aria-describedby={describedBy} aria-invalid={invalid} className={groupCls}>
-          <legend className={legendCls}>{f.label}{reqMark(f)}</legend>
+          <legend className={`${lblCls} p-0`}>{f.label}{reqMark(f)}</legend>
           {desc}
           <div className="space-y-1">
             {(f.options ?? []).map((o) => (
@@ -273,7 +352,7 @@ export function PublicForm({ slug, title, description, fields, settings }: Props
       const nums = Array.from({ length: s.max - s.min + 1 }, (_, i) => s.min + i);
       return wrap(
         <fieldset id={id} tabIndex={-1} aria-describedby={describedBy} aria-invalid={invalid} className={groupCls}>
-          <legend className={legendCls}>{f.label}{reqMark(f)}</legend>
+          <legend className={`${lblCls} p-0`}>{f.label}{reqMark(f)}</legend>
           {desc}
           <div className="flex flex-wrap gap-2">
             {nums.map((n) => (
@@ -296,7 +375,7 @@ export function PublicForm({ slug, title, description, fields, settings }: Props
       const cur = answers[f.id] as number | undefined;
       return wrap(
         <fieldset id={id} tabIndex={-1} aria-describedby={describedBy} aria-invalid={invalid} className={groupCls}>
-          <legend className={legendCls}>{f.label}{reqMark(f)}</legend>
+          <legend className={`${lblCls} p-0`}>{f.label}{reqMark(f)}</legend>
           {desc}
           <div className="flex flex-wrap gap-1">
             {Array.from({ length: max }, (_, i) => i + 1).map((n) => (
@@ -332,7 +411,7 @@ export function PublicForm({ slug, title, description, fields, settings }: Props
     if (f.type === "file") {
       return wrap(
         <>
-          <p className={labelCls}>{f.label}{reqMark(f)}</p>
+          <p className={lblCls}>{f.label}{reqMark(f)}</p>
           {desc}
           <div id={id} tabIndex={-1} className="border-2 border-dashed border-line p-4">
             Kolom unggah file sedang disiapkan dan belum bisa dipakai.
@@ -343,7 +422,7 @@ export function PublicForm({ slug, title, description, fields, settings }: Props
     }
 
     // ----- kolom satu input -----
-    const label = <label htmlFor={id} className={labelCls}>{f.label}{reqMark(f)}</label>;
+    const label = <label htmlFor={id} className={lblCls}>{f.label}{reqMark(f)}</label>;
     const common = { id, name: f.id, "aria-describedby": describedBy, "aria-invalid": invalid };
     const value = typeof answers[f.id] === "string" ? (answers[f.id] as string) : "";
 
@@ -394,12 +473,39 @@ export function PublicForm({ slug, title, description, fields, settings }: Props
   return (
     <>
       <form onSubmit={onSubmit} noValidate className="flex flex-col gap-6 sm:gap-8">
-        <header className="nb-panel nb-panel-strong nb-shadow p-6 sm:p-8">
-          {settings.quiz && <p className="nb-mono mb-3">Kuis</p>}
-          <h1 className="break-words font-display text-4xl font-bold sm:text-5xl">{title}</h1>
-          {description && <p className="mt-5 whitespace-pre-wrap text-lg leading-relaxed">{description}</p>}
-          <p className="nb-mono mt-6">* wajib diisi</p>
-        </header>
+        {pageIdx === 0 ? (
+          <header className="nb-panel nb-panel-strong nb-shadow p-6 sm:p-8">
+            {settings.quiz && <p className="nb-mono mb-3">Kuis</p>}
+            <h1 className="break-words font-display text-4xl font-bold sm:text-5xl">{title}</h1>
+            {description && <p className="mt-5 whitespace-pre-wrap text-lg leading-relaxed">{description}</p>}
+            <p className="nb-mono mt-6">* wajib diisi</p>
+          </header>
+        ) : (
+          <header className="nb-panel nb-panel-strong nb-shadow p-6 sm:p-8">
+            <p className="nb-mono mb-2">{title}</p>
+            <h1 className="break-words font-display text-3xl font-bold sm:text-4xl">{current.title || `Halaman ${pageIdx + 1}`}</h1>
+            {current.description && <p className="mt-4 whitespace-pre-wrap leading-relaxed">{current.description}</p>}
+          </header>
+        )}
+
+        {pages.length > 1 && (
+          <div className="nb-panel p-4" role="group" aria-label="Kemajuan halaman">
+            <div className="flex items-center justify-between gap-3">
+              <p className="nb-mono">Halaman {pageIdx + 1} dari {pages.length}</p>
+              <p className="nb-mono">{Math.round(((pageIdx + 1) / pages.length) * 100)}%</p>
+            </div>
+            <div
+              className="mt-3 h-3 border-2 border-line bg-surface"
+              role="progressbar"
+              aria-valuemin={1}
+              aria-valuemax={pages.length}
+              aria-valuenow={pageIdx + 1}
+              aria-label={`Halaman ${pageIdx + 1} dari ${pages.length}`}
+            >
+              <div className="h-full bg-accent" style={{ width: `${((pageIdx + 1) / pages.length) * 100}%` }} />
+            </div>
+          </div>
+        )}
 
         {enforce && (
           <div role="note" className="nb-panel border-[3px] bg-lavender p-5 text-ink">
@@ -411,20 +517,41 @@ export function PublicForm({ slug, title, description, fields, settings }: Props
           </div>
         )}
 
+        {errorFields.length > 0 && (
+          <div role="alert" id="error-summary" className={`nb-panel border-[3px] p-5 ${errRing}`}>
+            <p className="font-display text-lg font-bold text-[color:var(--danger)]">
+              ⚠ Ada {errorFields.length} pertanyaan yang perlu diperbaiki
+            </p>
+            <ul className="mt-3 space-y-2">
+              {errorFields.map((f) => (
+                <li key={f.id}>
+                  <button type="button" onClick={() => jumpTo(f.id)} className="text-left underline underline-offset-4">
+                    {f.label || "(tanpa judul)"}
+                  </button>
+                  <span className="block text-sm">{errors[f.id]}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* Honeypot: tersembunyi dari manusia dan screen reader */}
         <div className="absolute -left-[9999px]" aria-hidden="true">
           <label>Website<input tabIndex={-1} autoComplete="off" value={hp} onChange={(e) => setHp(e.target.value)} /></label>
         </div>
 
-        {fields.map(renderField)}
+        {current.fields.map(renderField)}
 
         {formError && (
           <div role="alert" className="nb-panel border-[3px] bg-orange p-5 font-bold text-ink">{formError}</div>
         )}
 
-        <div className="pt-2">
-          <button type="submit" className="nb-btn w-full sm:w-auto" disabled={status === "submitting"}>
-            {status === "submitting" ? "Mengirim…" : "Kirim"}
+        <div className="flex flex-wrap items-center gap-3 pt-2">
+          {pageIdx > 0 && (
+            <button type="button" onClick={() => setPageIdx((i) => Math.max(0, i - 1))} className="nb-btn nb-btn-ghost">← Kembali</button>
+          )}
+          <button type="submit" className="nb-btn" disabled={status === "submitting"}>
+            {status === "submitting" ? "Mengirim…" : isLast ? "Kirim" : "Lanjut →"}
           </button>
         </div>
       </form>

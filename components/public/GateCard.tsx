@@ -26,7 +26,7 @@ export function GateCard({ kind, slug, title, score }: Props) {
     );
   }
   return (
-    <div role="status" className="nb-panel nb-panel-strong nb-shadow bg-accent p-6 text-ink sm:p-8">
+    <div role="status" className="nb-panel nb-panel-strong nb-shadow bg-accent p-6 text-[color:var(--on-accent)] sm:p-8">
       <p className="nb-mono mb-3">Sudah selesai</p>
       <h1 className="break-words font-display text-4xl font-bold">Formulir sudah selesai dikerjakan.</h1>
       <p className="mt-5 leading-relaxed">

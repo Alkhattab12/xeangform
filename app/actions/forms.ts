@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { customAlphabet } from "nanoid";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { formSchemaJson, formSettingsSchema, parseSettings, publishIssues, type FormStatus } from "@/lib/forms/schema";
+import { formSchemaJson, formSettingsSchema, formThemeSchema, parseSettings, publishIssues, type FormStatus } from "@/lib/forms/schema";
 
 const makeSlug = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 10);
 const idSchema = z.string().uuid();
@@ -45,6 +45,7 @@ const saveSchema = z.object({
   description: z.string().max(2000),
   schema: formSchemaJson,
   settings: formSettingsSchema,
+  theme: formThemeSchema.nullable(),
 });
 
 export async function saveForm(id: string, input: unknown): Promise<SaveResult> {
@@ -65,6 +66,7 @@ export async function saveForm(id: string, input: unknown): Promise<SaveResult> 
       description: parsed.data.description.trim() || null,
       schema_json: parsed.data.schema,
       settings_json: parsed.data.settings,
+      theme_json: parsed.data.theme ?? {},
     })
     .eq("id", id)
     .eq("owner_id", user.id)

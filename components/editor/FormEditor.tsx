@@ -19,17 +19,20 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ArrowDown, ArrowLeft, ArrowUp, Copy, Download, GripVertical, Link2, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Copy, Download, GripVertical, Link2, Plus, Trash2 } from "lucide-react";
 import { saveForm, setFormStatus, type SaveResult, type StatusResult } from "@/app/actions/forms";
 import { FIELD_META, createField, newFieldId, newOptionId } from "@/lib/forms/field-meta";
+import { useBusyOverlay } from "@/components/ui/LoadingProvider";
 import { buildExport } from "@/lib/forms/portable";
-import { hasAnswerKey, isGradable, type FieldType, type FormField, type FormSettings, type FormStatus } from "@/lib/forms/schema";
+import { hasAnswerKey, isGradable, type FieldType, type FormField, type FormSettings, type FormStatus, type FormTheme } from "@/lib/forms/schema";
+import { fieldStyleVars, resolveTheme, themeStyle } from "@/lib/forms/theme";
 import { FieldLibrary } from "./FieldLibrary";
 import { FieldPreview } from "./FieldPreview";
 import { FieldSettings } from "./FieldSettings";
 import { FormSettingsPanel } from "./FormSettingsPanel";
+import { ThemePanel } from "./ThemePanel";
 
-type Initial = { id: string; title: string; description: string; slug: string; status: FormStatus; fields: FormField[]; settings: FormSettings };
+type Initial = { id: string; title: string; description: string; slug: string; status: FormStatus; fields: FormField[]; settings: FormSettings; theme: FormTheme | null };
 type SaveState = "saved" | "dirty" | "saving" | "error";
 type Tab = "fields" | "canvas" | "settings";
 
@@ -47,6 +50,8 @@ type ItemProps = {
   index: number;
   total: number;
   quiz: boolean;
+  page: number;
+  pages: number;
   selected: boolean;
   onSelect: () => void;
   onOpenSettings: () => void;
@@ -63,7 +68,7 @@ function SortableItem(p: ItemProps) {
   return (
     <li
       ref={setNodeRef}
-      style={style}
+      style={{ ...fieldStyleVars(p.field.style), ...style }}
       className={`nb-panel relative p-4 ${p.selected ? "nb-shadow outline-3 outline-offset-2 outline-solid outline-cobalt" : ""} ${isDragging ? "z-10 opacity-80" : ""}`}
     >
       <div className="flex items-start gap-3">
@@ -92,6 +97,7 @@ function SortableItem(p: ItemProps) {
         >
           <p className="nb-mono mb-2">
             {String(p.index + 1).padStart(2, "0")} / {meta.label}
+            {p.pages > 1 ? ` · Hal. ${p.page}` : ""}
             {p.quiz && isGradable(p.field.type) ? (hasAnswerKey(p.field) ? " · Kunci ✓" : " · Tanpa kunci") : ""}
           </p>
           <div className="pointer-events-none">
@@ -126,12 +132,15 @@ export function FormEditor({ initial }: { initial: Initial }) {
   const [description, setDescription] = useState(initial.description);
   const [fields, setFields] = useState<FormField[]>(initial.fields);
   const [settings, setSettings] = useState<FormSettings>(initial.settings);
+  const [theme, setTheme] = useState<FormTheme | null>(initial.theme);
+  const [asideTab, setAsideTab] = useState<"form" | "theme">("form");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [status, setStatus] = useState<FormStatus>(initial.status);
   const [save, setSave] = useState<SaveState>("saved");
   const [saveError, setSaveError] = useState("");
   const [tab, setTab] = useState<Tab>("canvas");
   const [busy, setBusy] = useState(false);
+  useBusyOverlay(busy);
   const [notice, setNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
 
   const sensors = useSensors(
@@ -140,8 +149,8 @@ export function FormEditor({ initial }: { initial: Initial }) {
   );
 
   // ---------- Autosave (debounce 1,5 dtk, simpan berurutan) ----------
-  const latest = useRef({ title, description, fields, settings });
-  latest.current = { title, description, fields, settings };
+  const latest = useRef({ title, description, fields, settings, theme });
+  latest.current = { title, description, fields, settings, theme };
   const version = useRef(0);
   const dirty = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -158,6 +167,7 @@ export function FormEditor({ initial }: { initial: Initial }) {
         description: snap.description,
         schema: { fields: snap.fields },
         settings: snap.settings,
+        theme: snap.theme,
       });
     } catch {
       res = { ok: false, error: "Koneksi bermasalah. Perubahan belum tersimpan." };
@@ -215,6 +225,11 @@ export function FormEditor({ initial }: { initial: Initial }) {
 
   // ---------- Operasi kolom ----------
   const selected = fields.find((f) => f.id === selectedId) ?? null;
+
+  const changeTheme = (t: FormTheme | null) => {
+    setTheme(t);
+    markDirty();
+  };
 
   const changeSettings = (patch: Partial<FormSettings>) => {
     setSettings((prev) => ({ ...prev, ...patch }));
@@ -314,7 +329,7 @@ export function FormEditor({ initial }: { initial: Initial }) {
   }
 
   function exportJson() {
-    const payload = buildExport(title, description, fields, settings);
+    const payload = buildExport(title, description, fields, settings, theme);
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -329,6 +344,16 @@ export function FormEditor({ initial }: { initial: Initial }) {
   }
 
   const show = (t: Tab) => `${tab === t ? "block" : "hidden"} lg:block`;
+  const canvasStyle = theme ? themeStyle(resolveTheme(theme)) : undefined;
+  const pageInfo = (() => {
+    let p = 1;
+    const nums: number[] = [];
+    for (const f of fields) {
+      if (f.type === "page_break") p += 1;
+      nums.push(p);
+    }
+    return { nums, total: p };
+  })();
 
   return (
     <div className="mx-auto max-w-[1400px] px-4 pb-24 pt-4">
@@ -397,7 +422,7 @@ export function FormEditor({ initial }: { initial: Initial }) {
           <FieldLibrary onAdd={addField} />
         </aside>
 
-        <section aria-label="Kanvas form" className={show("canvas")}>
+        <section aria-label="Kanvas form" className={`${show("canvas")} ${theme ? "p-3" : ""}`} style={canvasStyle}>
           <div className="nb-panel nb-panel-strong nb-shadow p-5">
             <label htmlFor="form-title" className="sr-only">Judul form</label>
             <input
@@ -446,6 +471,8 @@ export function FormEditor({ initial }: { initial: Initial }) {
                       index={i}
                       total={fields.length}
                       quiz={settings.quiz}
+                      page={pageInfo.nums[i]}
+                      pages={pageInfo.total}
                       selected={f.id === selectedId}
                       onSelect={() => setSelectedId(f.id)}
                       onOpenSettings={() => {
@@ -461,6 +488,12 @@ export function FormEditor({ initial }: { initial: Initial }) {
               </SortableContext>
             </DndContext>
           )}
+
+          {fields.length > 0 && (
+            <button type="button" onClick={() => addField("page_break")} className="nb-btn nb-btn-ghost mt-4 w-full">
+              <Plus size={18} aria-hidden="true" /> Tambah halaman baru
+            </button>
+          )}
         </section>
 
         <aside aria-label="Pengaturan kolom" className={`${show("settings")} lg:sticky lg:top-24 lg:max-h-[calc(100dvh-7rem)] lg:self-start lg:overflow-y-auto`}>
@@ -475,7 +508,13 @@ export function FormEditor({ initial }: { initial: Initial }) {
               </div>
             </div>
           ) : (
-            <FormSettingsPanel settings={settings} onChange={changeSettings} />
+            <div>
+              <div className="mb-3 grid grid-cols-2 gap-2" role="group" aria-label="Pengaturan form">
+                <button type="button" aria-pressed={asideTab === "form"} onClick={() => setAsideTab("form")} className={`nb-btn min-h-10 px-3 py-2 text-sm ${asideTab === "form" ? "" : "nb-btn-ghost"}`}>Form</button>
+                <button type="button" aria-pressed={asideTab === "theme"} onClick={() => setAsideTab("theme")} className={`nb-btn min-h-10 px-3 py-2 text-sm ${asideTab === "theme" ? "" : "nb-btn-ghost"}`}>Tema</button>
+              </div>
+              {asideTab === "form" ? <FormSettingsPanel settings={settings} onChange={changeSettings} /> : <ThemePanel theme={theme} onChange={changeTheme} />}
+            </div>
           )}
         </aside>
       </div>

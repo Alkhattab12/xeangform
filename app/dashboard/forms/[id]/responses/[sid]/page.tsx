@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { z } from "zod";
 import { deleteResponsesAction } from "@/app/actions/responses";
 import { ConfirmButton } from "@/components/dashboard/ConfirmButton";
-import { formatAnswer, readMeta } from "@/lib/forms/answers";
+import { answerChips, formatAnswer, readMeta } from "@/lib/forms/answers";
 import { formSchemaJson, isInputType } from "@/lib/forms/schema";
 import { createClient } from "@/lib/supabase/server";
 
@@ -52,7 +52,7 @@ export default async function ResponseDetailPage({
       <p className="nb-mono mt-1 break-all">ID: {sid}</p>
 
       {(meta.score || meta.respondent || meta.violations !== undefined) && (
-        <div className="nb-panel nb-panel-strong mt-6 p-4">
+        <div className="nb-panel nb-panel-strong nb-shadow mt-6 bg-accent p-4 text-[color:var(--on-accent)]">
           {meta.score && <p className="font-display text-2xl font-bold">Benar {meta.score.correct} dari {meta.score.total} soal</p>}
           {meta.respondent && (
             <p className="mt-2">Akun: {meta.respondent.name ? `${meta.respondent.name} · ` : ""}{meta.respondent.email ?? "-"}</p>
@@ -61,21 +61,55 @@ export default async function ResponseDetailPage({
         </div>
       )}
 
-      <dl className="mt-8 space-y-4">
-        {fields.map((f) => {
-          if (f.type === "section") {
-            return <h2 key={f.id} className="pt-4 font-display text-2xl font-bold">{f.label}</h2>;
-          }
-          if (!isInputType(f.type) || f.type === "file") return null;
-          const text = formatAnswer(f, answers[f.id]);
-          return (
-            <div key={f.id} className="nb-panel p-4">
-              <dt className="font-display font-bold">{f.label || "(tanpa judul)"}</dt>
-              <dd className="mt-2 whitespace-pre-wrap break-words">{text || <span className="opacity-60">— tidak diisi —</span>}</dd>
-            </div>
-          );
-        })}
-      </dl>
+      <ol className="mt-8 space-y-6">
+        {(() => {
+          let qn = 0;
+          return fields.map((f) => {
+            if (f.type === "section") {
+              return (
+                <li key={f.id} className="pt-2">
+                  <h2 className="inline-block border-[3px] border-line bg-fg px-3 py-1 font-display text-xl font-bold text-bg">{f.label}</h2>
+                </li>
+              );
+            }
+            if (f.type === "page_break") {
+              return (
+                <li key={f.id} className="nb-mono border-y-[3px] border-dashed border-line py-2 text-center">
+                  Halaman berikutnya{f.label ? ` — ${f.label}` : ""}
+                </li>
+              );
+            }
+            if (!isInputType(f.type) || f.type === "file") return null;
+            qn += 1;
+            const value = answers[f.id];
+            const chips = answerChips(f, value);
+            const text = formatAnswer(f, value);
+            const empty = chips ? chips.length === 0 : text === "";
+            return (
+              <li key={f.id} className="nb-panel nb-panel-strong nb-shadow overflow-hidden">
+                <div className="border-b-[3px] border-line bg-fg px-4 py-3 text-bg">
+                  <p className="nb-mono opacity-80">Pertanyaan {qn}</p>
+                  <p className="mt-1 break-words font-display text-lg font-bold">{f.label || "(tanpa judul)"}</p>
+                </div>
+                <div className="p-4">
+                  <p className="nb-mono mb-2">Jawaban</p>
+                  {empty ? (
+                    <div className="border-2 border-dashed border-line px-3 py-3 italic opacity-70">Tidak diisi</div>
+                  ) : chips ? (
+                    <div className="flex flex-wrap gap-2">
+                      {chips.map((c, i) => (
+                        <span key={i} className="border-[3px] border-line bg-accent px-3 py-1 font-bold text-[color:var(--on-accent)]">{c}</span>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="whitespace-pre-wrap break-words border-2 border-l-[8px] border-line border-l-cobalt bg-accent/30 px-4 py-3 text-lg font-semibold">{text}</div>
+                  )}
+                </div>
+              </li>
+            );
+          });
+        })()}
+      </ol>
 
       <form action={deleteResponsesAction} className="mt-10">
         <input type="hidden" name="formId" value={id} />

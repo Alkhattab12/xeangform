@@ -1,10 +1,15 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, IBM_Plex_Mono, Space_Grotesk } from "next/font/google";
+import { Fredoka, IBM_Plex_Mono, Inter, Lora, Orbitron, Space_Grotesk } from "next/font/google";
+import { LoadingProvider } from "@/components/ui/LoadingProvider";
 import "./globals.css";
 
 const display = Space_Grotesk({ subsets: ["latin"], variable: "--font-space-grotesk", display: "swap" });
 const sans = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 const mono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-plex-mono", display: "swap" });
+// Huruf tambahan untuk tema form; tidak di-preload, hanya diunduh jika dipakai.
+const rounded = Fredoka({ subsets: ["latin"], variable: "--font-fredoka", display: "swap", preload: false });
+const serif = Lora({ subsets: ["latin"], variable: "--font-lora", display: "swap", preload: false });
+const futuristic = Orbitron({ subsets: ["latin"], variable: "--font-orbitron", display: "swap", preload: false });
 
 export const metadata: Metadata = {
   title: { default: "Syamil Form — Forms with Character.", template: "%s · Syamil Form" },
@@ -16,10 +21,14 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
+const fontVars = [display, sans, mono, rounded, serif, futuristic].map((f) => f.variable).join(" ");
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="id" className={`${display.variable} ${sans.variable} ${mono.variable}`}>
-      <body>{children}</body>
+    <html lang="id" className={fontVars}>
+      <body>
+        <LoadingProvider>{children}</LoadingProvider>
+      </body>
     </html>
   );
 }

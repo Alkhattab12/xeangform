@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { GateCard } from "@/components/public/GateCard";
 import { PublicForm } from "@/components/public/PublicForm";
+import { ThemeScope } from "@/components/public/ThemeScope";
 import { findPriorSubmission, getPublicForm } from "@/lib/forms/public";
 import { createClient } from "@/lib/supabase/server";
 
@@ -36,7 +37,7 @@ export default async function PublicFormPage({ params }: { params: Promise<{ slu
   }
 
   return (
-    <div className="min-h-dvh">
+    <ThemeScope theme={form.theme} className="min-h-dvh">
       <main className="mx-auto max-w-2xl px-4 py-8 sm:py-12">
         {gate ?? (
           <PublicForm
@@ -51,6 +52,6 @@ export default async function PublicFormPage({ params }: { params: Promise<{ slu
           <Link href="/" className="underline underline-offset-4">Dibuat dengan Syamil Form</Link>
         </p>
       </main>
-    </div>
+    </ThemeScope>
   );
 }
