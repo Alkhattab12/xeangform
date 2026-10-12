@@ -4,15 +4,15 @@ import { Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Too
 import type { QuestionDetail } from "@/lib/analytics/compute";
 import { FIELD_META } from "@/lib/forms/field-meta";
 import type { FieldType } from "@/lib/forms/schema";
+import { AccumulationChart, type AccItem } from "./AccumulationChart";
 import { DataTable, type TableRow } from "./DataTable";
-import { COLOR_BAD, COLOR_BLANK, COLOR_NEUTRAL, COLOR_OK, fmtInt, fmtNum, fmtPct } from "./format";
+import { COLOR_BAD, COLOR_BLANK, COLOR_OK, fmtInt, fmtNum, fmtPct } from "./format";
 import { useReducedMotion } from "./useReducedMotion";
 
 const tick = { fill: "var(--fg)", fontSize: 12 };
 const tipBox = "border-2 border-line bg-surface p-2 text-sm text-fg shadow-[3px_3px_0_var(--shadow-color)]";
 const typeLabel = (t: string) => FIELD_META[t as FieldType]?.label ?? t;
 
-type BarDatum = { name: string; count: number; pct: number | null; status: string; fill: string; text: string };
 const trunc = (s: string, n = 28) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
 type Props = {
@@ -31,23 +31,19 @@ export function QuestionSection({ rows, detail, groupLabel, prevHref, nextHref, 
   const reduced = useReducedMotion();
   const anim = { isAnimationActive: !reduced, animationDuration: 450 };
 
-  let bars: BarDatum[] = [];
-  if (detail) {
-    bars = detail.options.map((o) => {
-      const status = o.correct === true ? "Jawaban benar" : o.correct === false ? "Jawaban salah" : "Tanpa kunci";
-      return {
-        name: `${o.correct === true ? "✓ " : o.correct === false ? "✗ " : ""}${trunc(o.label)}`,
-        count: o.count,
-        pct: o.pct,
-        status,
-        fill: o.correct === true ? COLOR_OK : o.correct === false ? COLOR_BAD : COLOR_NEUTRAL,
-        text: `${o.count} (${fmtPct(o.pct, "–")})`,
-      };
-    });
-    if (detail.row.respondents > 0) {
-      bars.push({ name: "– Tidak dijawab", count: detail.blank, pct: detail.row.pctBlank, status: "Kosong", fill: COLOR_BLANK, text: `${detail.blank} (${fmtPct(detail.row.pctBlank, "–")})` });
-    }
-  }
+  const accItems: AccItem[] = detail
+    ? [
+        ...detail.options.map((o): AccItem => ({
+          key: o.id,
+          label: `${o.correct === true ? "✓ " : o.correct === false ? "✗ " : ""}${trunc(o.label)}`,
+          value: o.count,
+          pct: detail.row.respondents > 0 ? (o.count / detail.row.respondents) * 100 : null,
+          fill: o.correct === true ? COLOR_OK : o.correct === false ? COLOR_BAD : undefined,
+          status: o.correct === true ? "✓ Benar" : o.correct === false ? "✗ Salah" : undefined,
+        })),
+        { key: "_blank", label: "– Tidak dijawab", value: detail.blank, pct: detail.row.pctBlank, fill: COLOR_BLANK, status: detail.row.keyed ? "Kosong" : undefined },
+      ]
+    : [];
   const d = detail?.row;
   const diffText = d?.difficulty ? { sulit: `Sulit (< ${hard}% benar)`, sedang: `Sedang (${hard}–${easy - 1}% benar)`, mudah: `Mudah (≥ ${easy}% benar)` }[d.difficulty] : null;
   const classOptions = detail ? detail.options.filter((o) => o.count > 0 || detail.byClass.some((c) => (c.counts[o.id] ?? 0) > 0)) : [];
@@ -92,57 +88,13 @@ export function QuestionSection({ rows, detail, groupLabel, prevHref, nextHref, 
                 </dl>
                 {d.limited && <p className="nb-panel mt-3 bg-lavender p-3 text-sm font-bold text-ink">Sampel terbatas ({d.respondents} peserta). Jangan menarik kesimpulan kuat dari angka ini.</p>}
 
-                {bars.length > 0 && (
-                  <div className="mt-5">
-                    <h4 className="font-display text-lg font-bold">Distribusi jawaban</h4>
-                    <p className="nb-mono mt-1">Persentase dihitung dari {fmtInt(detail.base)} peserta yang menjawab{d.type === "checkbox" ? " (pilihan ganda: total bisa melebihi 100%)" : ""}. ✓ benar · ✗ salah.</p>
-                    <div role="img" aria-label={`Diagram batang horizontal distribusi jawaban soal ${d.no}. Rincian ada pada tabel di bawahnya.`} className="mt-2" style={{ height: Math.max(160, bars.length * 46 + 30) }}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={bars} layout="vertical" margin={{ top: 4, right: 76, bottom: 4, left: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" strokeOpacity={0.25} horizontal={false} />
-                          <XAxis type="number" allowDecimals={false} tick={tick} />
-                          <YAxis type="category" dataKey="name" tick={tick} width={120} interval={0} />
-                          <Tooltip
-                            cursor={{ fill: "rgba(128,128,128,0.15)" }}
-                            content={({ active, payload }) => {
-                              const b = active ? (payload?.[0]?.payload as BarDatum | undefined) : undefined;
-                              if (!b) return null;
-                              return (
-                                <div className={tipBox}>
-                                  <p className="font-display font-bold">{b.name}</p>
-                                  <p>Pemilih: {fmtInt(b.count)}</p>
-                                  <p>Persentase: {fmtPct(b.pct, "–")}</p>
-                                  <p>Status: {b.status}</p>
-                                </div>
-                              );
-                            }}
-                          />
-                          <Bar dataKey="count" stroke="var(--line)" strokeWidth={2} {...anim}>
-                            {bars.map((b) => (
-                              <Cell key={b.name} fill={b.fill} />
-                            ))}
-                            <LabelList dataKey="text" position="right" fill="var(--fg)" fontSize={12} />
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <DataTable
-                      caption={`Distribusi jawaban soal ${d.no}`}
-                      pageSize={8}
-                      columns={[
-                        { key: "opsi", label: "Pilihan / jawaban", sortable: false },
-                        { key: "count", label: "Pemilih", kind: "int", align: "right", sortable: false },
-                        { key: "pct", label: "Persentase", kind: "pct", align: "right", sortable: false },
-                        { key: "status", label: "Status", kind: "badge", sortable: false },
-                      ]}
-                      rows={[
-                        ...detail.options.map((o) => ({ id: o.id, opsi: o.label, count: o.count, pct: o.pct, status: o.correct === true ? "✓ Benar" : o.correct === false ? "✗ Salah" : "" })),
-                        { id: "_blank", opsi: "Tidak dijawab", count: detail.blank, pct: d.pctBlank, status: "Kosong" },
-                      ]}
-                    />
-                    {detail.note && <p className="nb-mono mt-2">{detail.note}</p>}
-                  </div>
-                )}
+                <div className="mt-5">
+                  <h4 className="font-display text-lg font-bold">Akumulasi jawaban soal ini</h4>
+                  <p className="nb-mono mt-1 mb-2">
+                    Persentase dihitung dari {fmtInt(d.respondents)} peserta{d.type === "checkbox" ? " (pilihan ganda: total bisa melebihi 100%)" : ""}. ✓ benar · ✗ salah.
+                  </p>
+                  <AccumulationChart key={d.id} name={`jawaban soal ${d.no}`} items={accItems} valueLabel="Pemilih" rowLabel="Pilihan / jawaban" pctLabel="Dari peserta" note={detail.note ?? undefined} />
+                </div>
 
                 {d.topLabel && (
                   <div className="nb-panel mt-5 p-4">

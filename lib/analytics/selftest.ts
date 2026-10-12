@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { gradeQuiz } from "@/lib/forms/grade";
 import type { FormField } from "@/lib/forms/schema";
-import { analyze, changes, detectGroupField, previousRange, questionDetail, scoreSubmissions, selectResponses, summarize, type RawSubmission } from "./compute";
+import { analyze, changes, questionAccumulations, detectGroupField, previousRange, questionDetail, scoreSubmissions, selectResponses, summarize, type RawSubmission } from "./compute";
 import { parseAnalyticsFilters } from "./filters";
 
 const opt = (id: string, label: string) => ({ id, label });
@@ -162,5 +162,30 @@ assert.equal(sa.summary.hasScores, false);
 assert.equal(sa.summary.perResponse.n, 0);
 assert.equal(sa.summary.accuracy, null);
 assert.equal(sa.histogram.every((b) => b.count === 0 && b.pct === null), true);
+
+// 10) Akumulasi respons untuk SETIAP soal; persentase dari jumlah peserta
+const acc = questionAccumulations(rows, fields, f);
+assert.equal(acc.length, 6, "kelas, q1..q4, s1");
+for (const q of acc) {
+  assert.equal(q.respondents, 5);
+  assert.equal(q.items.at(-1)?.blank, true, "selalu ada butir 'Tidak dijawab'");
+  assert.equal(q.items.at(-1)?.value, q.blank);
+}
+const aq1 = acc.find((q) => q.id === "q1")!;
+assert.deepEqual(aq1.items.map((i) => i.value), [1, 3, 1, 0]); // A,B,C,kosong
+assert.deepEqual(aq1.items.map((i) => i.pct), [20, 60, 20, 0]);
+assert.equal(aq1.items.reduce((x, i) => x + i.value, 0), 5, "pilihan tunggal: total = peserta");
+const aq3 = acc.find((q) => q.id === "q3")!; // isian: menjawab vs kosong
+assert.deepEqual(aq3.items.map((i) => [i.label, i.value]), [["jakarta", 3], ["Tidak dijawab", 2]]); // berkunci: jawaban terbanyak
+const sAcc = questionAccumulations(selectResponses(sScored, f), survey, f).find((q) => q.id === "q3")!;
+assert.deepEqual(sAcc.items.map((i) => [i.label, i.value]), [["Menjawab", 3], ["Tidak dijawab", 2]], "isian tanpa kunci: tidak membuka isi jawaban (mis. nama)");
+const aq2 = acc.find((q) => q.id === "q2")!; // checkbox boleh > 100%
+assert.equal(aq2.items.find((i) => i.key === "x")?.value, 4);
+// 11) Akumulasi kuis: per waktu & status
+assert.deepEqual(a.timeline.map((t) => [t.key, t.n]), [["2026-10-01", 1], ["2026-10-02", 2], ["2026-10-03", 1], ["2026-10-04", 1]]);
+assert.equal(a.timeline.reduce((x, t) => x + t.n, 0), a.summary.responses);
+assert.deepEqual(a.statusCounts, [{ status: "received", label: "Diterima", count: 5 }]);
+const withSpam = analyze(selectResponses(scored, { ...f, status: "spam" }), fields, { ...f, status: "spam" });
+assert.deepEqual(withSpam.statusCounts, [{ status: "spam", label: "Spam", count: 1 }]);
 
 console.log("semua uji analitik lulus");

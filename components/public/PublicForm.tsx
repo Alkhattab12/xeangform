@@ -6,19 +6,10 @@ import { useBusyOverlay } from "@/components/ui/LoadingProvider";
 import { firstErrorFieldId, pageIndexOf, splitPages } from "@/lib/forms/pages";
 import { isInputType, type FormField, type FormSettings } from "@/lib/forms/schema";
 import { fieldStyleVars, labelSizeClass } from "@/lib/forms/theme";
-import { MiniAudioPlayer } from "./MiniAudioPlayer";
-import { playTactileSfx } from "@/lib/audio/engine";
-import type { ThemePreset } from "@/lib/forms/schema";
+import { OTHER, validateAnswers } from "@/lib/forms/validate";
 import { GateCard } from "./GateCard";
 
-type Props = {
-  slug: string;
-  title: string;
-  description: string;
-  fields: FormField[];
-  settings: FormSettings;
-  themePreset?: ThemePreset | null;
-};
+type Props = { slug: string; title: string; description: string; fields: FormField[]; settings: FormSettings };
 type ChoiceAnswer = { optionId?: string; other?: string };
 type MultiAnswer = { optionIds?: string[]; other?: string };
 type Status = "idle" | "submitting" | "done" | "already" | "login";
@@ -52,7 +43,7 @@ function focusField(fid: string) {
   el?.focus({ preventScroll: true });
 }
 
-export function PublicForm({ slug, title, description, fields, settings, themePreset }: Props) {
+export function PublicForm({ slug, title, description, fields, settings }: Props) {
   const enforce = !settings.allowTabSwitch;
   const pages = useMemo(() => splitPages(fields), [fields]);
   const [pageIdx, setPageIdx] = useState(0);
@@ -121,7 +112,6 @@ export function PublicForm({ slug, title, description, fields, settings, themePr
   }, [pageIdx]);
 
   const set = (id: string, value: unknown) => {
-    if (settings.audio?.sfxEnabled) playTactileSfx("click");
     setAnswers((p) => ({ ...p, [id]: value }));
     setErrors((p) => {
       if (!p[id]) return p;
@@ -158,11 +148,9 @@ export function PublicForm({ slug, title, description, fields, settings, themePr
   function goNext() {
     const r = validateAnswers(current.fields, answers);
     if (!r.ok) {
-      if (settings.audio?.sfxEnabled) playTactileSfx("warn");
       revealErrors(r.errors, current.fields);
       return;
     }
-    if (settings.audio?.sfxEnabled) playTactileSfx("page");
     setErrors({});
     setPageIdx((i) => Math.min(i + 1, pages.length - 1));
   }
@@ -194,7 +182,6 @@ export function PublicForm({ slug, title, description, fields, settings, themePr
         violations: enforce ? { count: countRef.current, events: events.current } : undefined,
       });
       if (res.ok) {
-        if (settings.audio?.sfxEnabled) playTactileSfx("success");
         setResult(res.result ?? null);
         setStatus("done");
         return;
@@ -208,10 +195,7 @@ export function PublicForm({ slug, title, description, fields, settings, themePr
         return;
       }
       setStatus("idle");
-      if (res.fieldErrors) {
-        if (settings.audio?.sfxEnabled) playTactileSfx("warn");
-        revealErrors(res.fieldErrors, fields);
-      }
+      if (res.fieldErrors) revealErrors(res.fieldErrors, fields);
       if (res.error) setFormError(res.error);
     } catch {
       setStatus("idle");
@@ -237,28 +221,19 @@ export function PublicForm({ slug, title, description, fields, settings, themePr
 
   if (status === "done") {
     return (
-      <>
-        <div className="nb-panel nb-panel-strong nb-shadow bg-accent p-6 text-[color:var(--on-accent)] sm:p-8" role="status">
-          <p className="nb-mono mb-3">Terkirim</p>
-          <h1 className="font-display text-4xl font-bold">Terima kasih!</h1>
-          <p className="mt-5 leading-relaxed">Jawabanmu untuk &quot;{title}&quot; sudah tersimpan.</p>
-          {result && result.total > 0 && (
-            <p className="mt-8 border-t-[3px] border-current pt-6 font-display text-4xl font-bold">
-              Benar {result.correct} dari {result.total} soal
-            </p>
-          )}
-          {!settings.oneResponsePerAccount && (
-            <button type="button" onClick={again} className="nb-btn nb-btn-ink mt-8">Kirim respons lain</button>
-          )}
-        </div>
-        {settings.audio?.enabled && (
-          <MiniAudioPlayer
-            audioSettings={settings.audio}
-            themePreset={themePreset}
-            formSubmitted={true}
-          />
+      <div className="nb-panel nb-panel-strong nb-shadow bg-accent p-6 text-[color:var(--on-accent)] sm:p-8" role="status">
+        <p className="nb-mono mb-3">Terkirim</p>
+        <h1 className="font-display text-4xl font-bold">Terima kasih!</h1>
+        <p className="mt-5 leading-relaxed">Jawabanmu untuk &quot;{title}&quot; sudah tersimpan.</p>
+        {result && result.total > 0 && (
+          <p className="mt-8 border-t-[3px] border-current pt-6 font-display text-4xl font-bold">
+            Benar {result.correct} dari {result.total} soal
+          </p>
         )}
-      </>
+        {!settings.oneResponsePerAccount && (
+          <button type="button" onClick={again} className="nb-btn nb-btn-ink mt-8">Kirim respons lain</button>
+        )}
+      </div>
     );
   }
 
@@ -580,14 +555,6 @@ export function PublicForm({ slug, title, description, fields, settings, themePr
           </button>
         </div>
       </form>
-
-      {settings.audio?.enabled && (
-        <MiniAudioPlayer
-          audioSettings={settings.audio}
-          themePreset={themePreset}
-          formSubmitted={false}
-        />
-      )}
 
       {enforce && warn && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="alertdialog" aria-modal="true" aria-labelledby="warn-title" aria-describedby="warn-desc">

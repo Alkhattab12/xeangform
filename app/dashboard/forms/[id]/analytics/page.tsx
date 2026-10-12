@@ -2,13 +2,15 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { z } from "zod";
-import { ClassSection } from "@/components/analytics/ClassSection";
+import { AccumulationChart, type AccItem } from "@/components/analytics/AccumulationChart";
 import { DataTable, type TableRow } from "@/components/analytics/DataTable";
-import { fmtDelta, fmtInt, fmtNum, fmtPct } from "@/components/analytics/format";
+import { COLOR_BAD, COLOR_BLANK, COLOR_OK, fmtDelta, fmtInt, fmtNum, fmtPct } from "@/components/analytics/format";
+import { QuestionAccumulation } from "@/components/analytics/QuestionAccumulation";
 import { QuestionSection } from "@/components/analytics/QuestionSection";
+import { QuizAccumulation, type Dimension } from "@/components/analytics/QuizAccumulation";
 import { ScoreSection } from "@/components/analytics/ScoreSection";
 import { StatCard } from "@/components/analytics/StatCard";
-import { changes, groupCandidates, questionDetail } from "@/lib/analytics/compute";
+import { changes, groupCandidates, questionAccumulations, questionDetail } from "@/lib/analytics/compute";
 import { describeFilters, filtersToQs, parseAnalyticsFilters, DEFAULT_BINS } from "@/lib/analytics/filters";
 import { ANALYTICS_CAP } from "@/lib/analytics/load";
 import { runAnalytics } from "@/lib/analytics/run";
@@ -39,9 +41,11 @@ export default async function AnalyticsPage({ params, searchParams }: { params: 
   const { data: form } = await supabase.from("forms").select("title,status,schema_json,settings_json").eq("id", id).maybeSingle();
   if (!form) notFound();
 
-  const [res, quizzes] = await Promise.all([
+  const [res, quizzes, allForms] = await Promise.all([
     runAnalytics(supabase, id, form, filters),
     supabase.from("forms").select("id", { count: "exact", head: true }).eq("settings_json->>quiz", "true"),
+    // Jumlah respons tersimpan per form milik user ini (RLS), untuk akumulasi lintas kuis.
+    supabase.from("forms").select("id,title,status,form_submissions(count)").order("updated_at", { ascending: false }).limit(100),
   ]);
 
   const base = `/dashboard/forms/${id}/analytics`;
@@ -103,6 +107,92 @@ export default async function AnalyticsPage({ params, searchParams }: { params: 
     blank: s.hasScores ? p.blank : null,
     attempt: p.who ? p.attempt : null,
     href: `/dashboard/forms/${id}/responses/${p.id}`,
+  }));
+
+  // ---- Akumulasi respons kuis: beberapa dimensi, semuanya dari `rows` yang sama dengan kartu & tabel ----
+  const total = s.responses;
+  const share = (n: number) => (total > 0 ? (n / total) * 100 : null);
+  const dims: Dimension[] = [];
+  if (groupField && a.classes.length > 0) {
+    dims.push({
+      key: "kelas",
+      label: `Per ${groupLabel.toLowerCase()}`,
+      rowLabel: groupLabel,
+      valueLabel: "Respons valid",
+      pctLabel: "Kontribusi",
+      items: a.classes.map((c) => ({ key: c.key || "_", label: c.label, value: c.responses, pct: c.share, lines: [`Peserta unik: ${fmtInt(c.participants)}`], cells: { participants: c.participants, completed: c.completed } })),
+      extraColumns: [
+        { key: "participants", label: "Peserta unik*", kind: "int", align: "right" },
+        { key: "completed", label: "Pengerjaan selesai", kind: "int", align: "right" },
+      ],
+      note: "*Peserta unik hanya dihitung dari respons yang punya akun; respons anonim tidak bisa dibedakan.",
+    });
+  }
+  if (a.timeline.length > 0) {
+    dims.push({ key: "waktu", label: `Per ${filters.interval}`, rowLabel: "Periode", valueLabel: "Respons", pctLabel: "Kontribusi", items: a.timeline.map((t) => ({ key: t.key, label: t.label, value: t.n, pct: share(t.n) })), note: "Hanya periode yang punya respons yang ditampilkan. Interval diatur di filter “Interval tren”." });
+  }
+  if (s.hasScores && s.perResponse.n > 0) {
+    dims.push({ key: "nilai", label: "Per rentang nilai", rowLabel: "Rentang nilai", valueLabel: "Pengerjaan", pctLabel: "Persentase", items: a.histogram.map((b) => ({ key: b.label, label: `Nilai ${b.label}`, value: b.count, pct: b.pct })), note: "Rentang bisa diubah lewat filter “Rentang histogram”." });
+    const lulus = s.perResponse.passed;
+    const belum = s.perResponse.n - lulus;
+    dims.push({
+      key: "lulus",
+      label: "Kelulusan",
+      rowLabel: "Status",
+      valueLabel: "Pengerjaan",
+      pctLabel: "Persentase",
+      items: [
+        { key: "lulus", label: `Lulus (≥ ${filters.pass})`, value: lulus, pct: s.perResponse.passRate, fill: COLOR_OK },
+        { key: "belum", label: `Belum lulus (< ${filters.pass})`, value: belum, pct: s.perResponse.passRate === null ? null : 100 - s.perResponse.passRate, fill: COLOR_BAD },
+      ],
+    });
+  }
+  if (a.statusCounts.length > 0) {
+    dims.push({ key: "status", label: "Per status", rowLabel: "Status respons", valueLabel: "Respons", pctLabel: "Kontribusi", items: a.statusCounts.map((c) => ({ key: c.status, label: c.label, value: c.count, pct: share(c.count) })) });
+  }
+
+  // ---- Akumulasi respons semua kuis/form milik user ----
+  type FormRowAcc = { id: string; title: string; status: string; form_submissions: { count: number }[] | null };
+  const formRows = ((allForms.data ?? []) as unknown as FormRowAcc[])
+    .map((f) => ({ id: f.id, title: f.title, status: f.status, count: f.form_submissions?.[0]?.count ?? 0 }))
+    .filter((f) => f.count > 0)
+    .sort((x, y) => y.count - x.count);
+  const formTotal = formRows.reduce((acc, f) => acc + f.count, 0);
+  const topForms = formRows.slice(0, 12);
+  const restForms = formRows.slice(12);
+  const STATUS_FORM: Record<string, string> = { draft: "Draft", published: "Terbit", archived: "Arsip" };
+  const formItems: AccItem[] = topForms.map((f) => ({
+    key: f.id,
+    label: trunc(f.title || "Form Tanpa Judul", 34) + (f.id === id ? " (ini)" : ""),
+    value: f.count,
+    pct: formTotal > 0 ? (f.count / formTotal) * 100 : null,
+    cells: { fstatus: STATUS_FORM[f.status] ?? f.status, href: `/dashboard/forms/${f.id}/analytics` },
+  }));
+  if (restForms.length > 0) {
+    const n = restForms.reduce((acc, f) => acc + f.count, 0);
+    formItems.push({ key: "_rest", label: `Lainnya (${restForms.length} form)`, value: n, pct: formTotal > 0 ? (n / formTotal) * 100 : null, fill: COLOR_BLANK });
+  }
+
+  // ---- Akumulasi respons untuk SETIAP soal ----
+  const accQuestions = questionAccumulations(rows, res.fields, filters).map((q) => ({
+    id: q.id,
+    no: q.no,
+    label: q.label,
+    type: q.type,
+    keyed: q.keyed,
+    respondents: q.respondents,
+    answered: q.answered,
+    href: soalHref(q.id),
+    items: q.items.map(
+      (i): AccItem => ({
+        key: i.key,
+        label: i.blank ? "– Tidak dijawab" : `${i.correct === true ? "✓ " : i.correct === false ? "✗ " : ""}${trunc(i.label, 30)}`,
+        value: i.value,
+        pct: i.pct,
+        fill: i.blank ? COLOR_BLANK : i.correct === true ? COLOR_OK : i.correct === false ? COLOR_BAD : undefined,
+        status: i.correct === true ? "✓ Benar" : i.correct === false ? "✗ Salah" : undefined,
+      }),
+    ),
   }));
 
   const change = res.prevRange && res.prevSummary ? changes(s, res.prevSummary) : null;
@@ -302,17 +392,37 @@ export default async function AnalyticsPage({ params, searchParams }: { params: 
         </div>
       </section>
 
-      {groupField ? (
-        <ClassSection classes={a.classes} groupLabel={groupLabel} total={s.responses} />
-      ) : (
-        <p className="nb-panel nb-panel-strong mt-12 p-4">
-          Form ini tidak punya kolom “Kelas” (pilihan, dropdown, atau jawaban singkat). Pilih kolom pengelompok di filter “Kelompokkan berdasarkan” untuk melihat distribusi dan perbandingan per kelompok.
+      <QuizAccumulation dimensions={dims} total={total} />
+      {!groupField && (
+        <p className="nb-panel nb-panel-strong mt-4 p-4">
+          Form ini tidak punya kolom “Kelas” (pilihan, dropdown, atau jawaban singkat). Pilih kolom pengelompok di filter “Kelompokkan berdasarkan” untuk menambah dimensi akumulasi per kelompok.
         </p>
       )}
+
+      <section aria-labelledby="sec-akumulasi-form" className="mt-12">
+        <h2 id="sec-akumulasi-form" className="font-display text-3xl font-bold">Akumulasi respons semua kuis</h2>
+        <p className="mt-1 text-sm opacity-80">Jumlah respons tersimpan di setiap form/kuis milikmu ({fmtInt(formTotal)} total, tanpa filter di atas). Persentase = respons form ÷ total semua form.</p>
+        <div className="mt-4">
+          <AccumulationChart
+            name="respons per kuis"
+            items={formItems}
+            valueLabel="Respons"
+            rowLabel="Kuis / form"
+            pctLabel="Kontribusi"
+            extraColumns={[
+              { key: "fstatus", label: "Status form" },
+              { key: "href", label: "Analitik", kind: "link", linkLabel: "Buka" },
+            ]}
+            emptyText="Belum ada respons di form mana pun."
+          />
+        </div>
+      </section>
 
       {s.hasScores && (
         <ScoreSection classes={groupField ? a.classes : []} histogram={a.histogram} trend={a.trend} trendFilled={a.trendFilled} interval={filters.interval} pass={filters.pass} groupLabel={groupLabel} scoredCount={s.perResponse.n} />
       )}
+
+      <QuestionAccumulation questions={accQuestions} />
 
       <QuestionSection
         rows={qRows}

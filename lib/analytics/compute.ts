@@ -294,6 +294,8 @@ export type Analytics = {
   histogram: Bin[];
   trend: TrendPoint[];
   trendFilled: boolean;
+  timeline: { key: string; label: string; n: number }[];
+  statusCounts: { status: string; label: string; count: number }[];
   questions: QuestionRow[];
   participants: { id: string; at: string; who: string; group: string; pct: number | null; correct: number; wrong: number; blank: number; attempt: number }[];
 };
@@ -414,7 +416,7 @@ function optionList(f: FormField): { id: string; label: string }[] {
   return [];
 }
 
-function buildQuestion(rows: Scored[], f: FormField, no: number, fl: AnalyticsFilters): QuestionDetail {
+function buildQuestion(rows: Scored[], f: FormField, no: number, fl: AnalyticsFilters, light = false): QuestionDetail {
   const keyed = hasAnswerKey(f);
   const N = rows.length;
   const opts = optionList(f);
@@ -449,7 +451,7 @@ function buildQuestion(rows: Scored[], f: FormField, no: number, fl: AnalyticsFi
     options.push({ id, label: id === "__other__" ? "Lainnya (diisi sendiri)" : "(opsi sudah dihapus)", count: c, pct: ratio(c, answered), correct: keyed ? false : null });
   }
   let note: string | null = null;
-  if (!isChoice(f) && !isScale(f) && (f.type === "short_text" || f.type === "number")) {
+  if (keyed && (f.type === "short_text" || f.type === "number")) {
     const top = [...open.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
     const keySet = new Set([...(f.answerKey?.text ?? []).map(norm), ...(typeof f.answerKey?.number === "number" ? [String(f.answerKey.number)] : [])]);
     for (const [k, c] of top) options.push({ id: `t:${k}`, label: k.length > 60 ? `${k.slice(0, 57)}…` : k, count: c, pct: ratio(c, answered), correct: keyed ? keySet.has(k) : null });
@@ -485,8 +487,8 @@ function buildQuestion(rows: Scored[], f: FormField, no: number, fl: AnalyticsFi
 
   // Perbandingan antar kelompok: penyebut = peserta di kelompok itu yang menjawab soal ini.
   const groups = new Map<string, Scored[]>();
-  for (const r of rows) groups.set(r.groupKey, [...(groups.get(r.groupKey) ?? []), r]);
-  const byClass = [...groups.entries()]
+  if (!light) for (const r of rows) groups.set(r.groupKey, [...(groups.get(r.groupKey) ?? []), r]);
+  const byClass = (light ? [] : [...groups.entries()])
     .map(([key, list]) => {
       const ans = list.filter((r) => isAnswered(f, r.answers[f.id]));
       const cnt: Record<string, number> = {};
@@ -509,13 +511,63 @@ function buildQuestion(rows: Scored[], f: FormField, no: number, fl: AnalyticsFi
 }
 
 export function questionRows(rows: Scored[], fields: FormField[], fl: AnalyticsFilters): QuestionRow[] {
-  return inputFields(fields).map((f, i) => buildQuestion(rows, f, i + 1, fl).row);
+  return inputFields(fields).map((f, i) => buildQuestion(rows, f, i + 1, fl, true).row);
+}
+
+export type AccItem = { key: string; label: string; value: number; pct: number | null; correct: boolean | null; blank?: boolean };
+export type AccQuestion = {
+  id: string;
+  no: number;
+  label: string;
+  type: string;
+  keyed: boolean;
+  respondents: number;
+  answered: number;
+  blank: number;
+  items: AccItem[];
+};
+
+/**
+ * Akumulasi respons untuk SETIAP soal. Persentase = jumlah ÷ peserta di cakupan filter.
+ * Soal pilihan/skala: satu butir per opsi + "Tidak dijawab". Soal isian bebas: "Menjawab" vs "Tidak dijawab".
+ * Untuk soal pilihan ganda (checkbox) satu peserta bisa memilih beberapa opsi, sehingga total persentase bisa > 100%.
+ */
+export function questionAccumulations(rows: Scored[], fields: FormField[], fl: AnalyticsFilters): AccQuestion[] {
+  const N = rows.length;
+  return inputFields(fields).map((f, i) => {
+    const d = buildQuestion(rows, f, i + 1, fl, true);
+    const hasOpts = d.options.some((o) => o.count > 0);
+    const items: AccItem[] = hasOpts
+      ? d.options.map((o) => ({ key: o.id, label: o.label, value: o.count, pct: ratio(o.count, N), correct: o.correct }))
+      : [{ key: "_answered", label: "Menjawab", value: d.row.answered, pct: ratio(d.row.answered, N), correct: null }];
+    const shown = items.reduce((x, i) => x + i.value, 0);
+    if (hasOpts && (f.type === "short_text" || f.type === "number") && d.row.answered > shown) {
+      items.push({ key: "_other", label: "Jawaban lain", value: d.row.answered - shown, pct: ratio(d.row.answered - shown, N), correct: null });
+    }
+    items.push({ key: "_blank", label: "Tidak dijawab", value: d.blank, pct: ratio(d.blank, N), correct: null, blank: true });
+    return { id: f.id, no: i + 1, label: d.row.label, type: f.type, keyed: d.row.keyed, respondents: N, answered: d.row.answered, blank: d.blank, items };
+  });
 }
 
 export function questionDetail(rows: Scored[], fields: FormField[], id: string, fl: AnalyticsFilters): QuestionDetail | null {
   const list = inputFields(fields);
   const i = list.findIndex((f) => f.id === id);
   return i < 0 ? null : buildQuestion(rows, list[i], i + 1, fl);
+}
+
+const STATUS_LABEL: Record<string, string> = { received: "Diterima", flagged: "Ditandai", spam: "Spam" };
+
+/** Jumlah respons per periode (semua respons, bukan hanya yang bernilai). Hanya periode yang punya respons. */
+export function timeline(rows: Scored[], interval: AnalyticsFilters["interval"]): { key: string; label: string; n: number }[] {
+  const m = new Map<string, number>();
+  for (const r of rows) m.set(bucketKey(r.day, interval), (m.get(bucketKey(r.day, interval)) ?? 0) + 1);
+  return [...m.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([key, n]) => ({ key, label: bucketLabel(key, interval), n }));
+}
+
+export function statusCounts(rows: Scored[]): { status: string; label: string; count: number }[] {
+  const m = new Map<string, number>();
+  for (const r of rows) m.set(r.status, (m.get(r.status) ?? 0) + 1);
+  return [...m.entries()].map(([status, count]) => ({ status, label: STATUS_LABEL[status] ?? status, count }));
 }
 
 export function analyze(rows: Scored[], fields: FormField[], fl: AnalyticsFilters): Analytics {
@@ -536,6 +588,8 @@ export function analyze(rows: Scored[], fields: FormField[], fl: AnalyticsFilter
     histogram: histogram(rows, fl.bins),
     trend: t.points,
     trendFilled: t.filled,
+    timeline: timeline(rows, fl.interval),
+    statusCounts: statusCounts(rows),
     questions: questionRows(rows, fields, fl),
     participants: [...rows]
       .sort((a, b) => b.at.localeCompare(a.at))
