@@ -46,6 +46,7 @@ export default async function PublicFormPage({ params }: { params: Promise<{ slu
             description={form.description}
             fields={form.fields}
             settings={form.settings}
+            themePreset={form.theme?.preset}
           />
         )}
         <p className="nb-mono mt-10 text-center">

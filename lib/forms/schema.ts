@@ -84,14 +84,61 @@ export const formSchemaJson = z
     });
   });
 
+export const AUDIO_START_MODES = ["first_interaction", "manual_play"] as const;
+export type AudioStartMode = (typeof AUDIO_START_MODES)[number];
+
+export const AUDIO_PLAYER_STYLES = ["floating_pill", "bottom_dock", "header_badge", "minimal_icon"] as const;
+export type AudioPlayerStyle = (typeof AUDIO_PLAYER_STYLES)[number];
+
+export const audioSettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+  trackId: z.string().default("lofi-focus"),
+  customUrl: z.string().max(1000).optional(),
+  title: z.string().max(100).default("Midnight Study Lo-Fi"),
+  artist: z.string().max(100).default("Xeangform Soundscape"),
+  sourceUrl: z.string().max(500).optional(),
+  license: z.string().max(100).default("CC0 Public Domain"),
+  duration: z.number().min(0).max(3600).optional(),
+  volume: z.number().int().min(0).max(100).default(35),
+  loop: z.boolean().default(true),
+  startMode: z.enum(AUDIO_START_MODES).default("first_interaction"),
+  stopOnSubmit: z.boolean().default(true),
+  playerStyle: z.enum(AUDIO_PLAYER_STYLES).default("floating_pill"),
+  sfxEnabled: z.boolean().default(true),
+});
+export type AudioSettings = z.infer<typeof audioSettingsSchema>;
+
+export const DEFAULT_AUDIO_SETTINGS: AudioSettings = {
+  enabled: false,
+  trackId: "lofi-focus",
+  customUrl: "",
+  title: "Midnight Study Lo-Fi",
+  artist: "Xeangform Soundscape",
+  sourceUrl: "",
+  license: "CC0 Public Domain",
+  duration: 6,
+  volume: 35,
+  loop: true,
+  startMode: "first_interaction",
+  stopOnSubmit: true,
+  playerStyle: "floating_pill",
+  sfxEnabled: true,
+};
+
 /** Pengaturan tingkat form (disimpan di forms.settings_json). */
 export const formSettingsSchema = z.object({
   quiz: z.boolean().default(false),
   allowTabSwitch: z.boolean().default(true),
   oneResponsePerAccount: z.boolean().default(false),
+  audio: audioSettingsSchema.default(DEFAULT_AUDIO_SETTINGS),
 });
 export type FormSettings = z.infer<typeof formSettingsSchema>;
-export const DEFAULT_SETTINGS: FormSettings = { quiz: false, allowTabSwitch: true, oneResponsePerAccount: false };
+export const DEFAULT_SETTINGS: FormSettings = {
+  quiz: false,
+  allowTabSwitch: true,
+  oneResponsePerAccount: false,
+  audio: DEFAULT_AUDIO_SETTINGS,
+};
 
 export function parseSettings(v: unknown): FormSettings {
   const r = formSettingsSchema.safeParse(v ?? {});
