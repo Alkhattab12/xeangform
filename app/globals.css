@@ -179,29 +179,12 @@ h1, h2, h3, h4 {
 }
 }
 
-/* ================= Maskot loading (Blobi, karakter orisinal) ================= */
-.m-anim .m-arm-l, .m-anim .m-arm-r { transform-box: fill-box; transform-origin: 50% 0; }
-.m-anim .m-head { transform-box: fill-box; transform-origin: 50% 90%; }
-.m-anim[data-phase="typing"] .m-arm-l { animation: m-tap 0.32s ease-in-out infinite; }
-.m-anim[data-phase="typing"] .m-arm-r { animation: m-tap 0.32s ease-in-out 0.16s infinite; }
-.m-anim[data-phase="typing"] .m-key { animation: m-key 0.32s steps(2) infinite; }
-.m-anim[data-phase="typing"] .m-pupil { transform: translateY(2px); }
-.m-anim[data-phase="thinking"] .m-head { animation: m-tilt 1.6s ease-in-out infinite; }
-.m-anim[data-phase="thinking"] .m-pupil { transform: translate(3px, -3px); }
-.m-anim .m-bubble { opacity: 0; transition: opacity 200ms; }
-.m-anim[data-phase="thinking"] .m-bubble { opacity: 1; }
-.m-anim[data-phase="thinking"] .m-dot { animation: m-dot 1s ease-in-out infinite; }
-.m-anim .m-dot:nth-child(2) { animation-delay: 0.2s; }
-.m-anim .m-dot:nth-child(3) { animation-delay: 0.4s; }
+/* ================= Maskot loading (Puck: sprite diputar lewat JS; .m-bob hanya untuk gambar kustom) ================= */
 .m-bob { animation: m-bob 1.4s ease-in-out infinite; }
-@keyframes m-tap { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(7px); } }
-@keyframes m-key { 0% { opacity: 1; } 100% { opacity: 0.35; } }
-@keyframes m-tilt { 0%, 100% { transform: rotate(-5deg); } 50% { transform: rotate(5deg); } }
-@keyframes m-dot { 0%, 100% { opacity: 0.25; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-3px); } }
 @keyframes m-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .m-anim *, .m-bob { animation: none !important; }
+  .m-bob { animation: none !important; }
   *, *::before, *::after {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;

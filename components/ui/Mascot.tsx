@@ -2,17 +2,89 @@
 
 import { useEffect, useState } from "react";
 
+export type PuckState = "idle" | "typing" | "thinking" | "working" | "success" | "error";
+
+// Sprite sheet: public/puck/puck-sprite.png (latar transparan, 8 kolom x 6 baris, 172x132 px per frame).
+// Urutan baris: idle, typing, thinking, working, success, error. Metadata ada di puck-atlas.json.
+const FRAME_W = 172;
+const FRAME_H = 132;
+const COLS = 8;
+const ROW: Record<PuckState, number> = { idle: 0, typing: 1, thinking: 2, working: 3, success: 4, error: 5 };
+const FPS: Record<PuckState, number> = { idle: 6, typing: 10, thinking: 5, working: 14, success: 10, error: 9 };
+const LABEL: Record<PuckState, string> = {
+  idle: "Siap membantu…",
+  typing: "Sedang mengetik…",
+  thinking: "Hmm, lagi mikir…",
+  working: "Lagi ngebut…",
+  success: "Beres!",
+  error: "Waduh, ada yang bingung…",
+};
+
+// Urutan otomatis saat overlay loading tampil (state tidak diisi).
+const AUTO: { state: PuckState; ms: number }[] = [
+  { state: "typing", ms: 2400 },
+  { state: "thinking", ms: 1800 },
+  { state: "working", ms: 2400 },
+];
+
 // Opsional: gambar maskot sendiri (milikmu atau berlisensi) lewat NEXT_PUBLIC_LOADER_MASCOT_URL.
 const RAW = process.env.NEXT_PUBLIC_LOADER_MASCOT_URL;
 const CUSTOM = RAW && /^(https?:\/\/|\/)/.test(RAW) ? RAW : null;
 
-/** "Blobi": maskot orisinal yang mengetik lalu berpikir selama proses berjalan. */
-export function Mascot() {
-  const [phase, setPhase] = useState<"typing" | "thinking">("typing");
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(false);
   useEffect(() => {
-    const t = setInterval(() => setPhase((p) => (p === "typing" ? "thinking" : "typing")), 1800);
-    return () => clearInterval(t);
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setReduced(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
   }, []);
+  return reduced;
+}
+
+type Props = {
+  /** Paksa satu status. Jika kosong, Puck bergantian: mengetik → berpikir → bekerja. */
+  state?: PuckState;
+  /** Pembesaran bilangan bulat agar piksel tetap tajam (default 1). */
+  scale?: number;
+  /** Tampilkan teks keterangan di bawah sprite (default true). */
+  caption?: boolean;
+};
+
+export function Mascot({ state, scale = 1, caption = true }: Props) {
+  const reduced = usePrefersReducedMotion();
+  const [autoIdx, setAutoIdx] = useState(0);
+  const [frame, setFrame] = useState(0);
+
+  const current: PuckState = state ?? AUTO[autoIdx].state;
+
+  // Ganti status otomatis (hanya jika state tidak dipaksa dan gerak tidak dikurangi).
+  useEffect(() => {
+    if (state || reduced) return;
+    const t = setTimeout(() => setAutoIdx((i) => (i + 1) % AUTO.length), AUTO[autoIdx].ms);
+    return () => clearTimeout(t);
+  }, [state, reduced, autoIdx]);
+
+  // Putar frame untuk status aktif.
+  useEffect(() => {
+    setFrame(0);
+    if (reduced || CUSTOM) return;
+    const t = setInterval(() => setFrame((f) => (f + 1) % COLS), 1000 / FPS[current]);
+    return () => clearInterval(t);
+  }, [current, reduced]);
+
+  const w = FRAME_W * scale;
+  const h = FRAME_H * scale;
+  const layer = (src: string): React.CSSProperties => ({
+    position: "absolute",
+    inset: 0,
+    backgroundImage: `url(${src})`,
+    backgroundSize: `${COLS * w}px ${6 * h}px`,
+    backgroundPosition: `${-frame * w}px ${-ROW[current] * h}px`,
+    backgroundRepeat: "no-repeat",
+    imageRendering: "pixelated",
+  });
 
   return (
     <div className="flex flex-col items-center gap-3">
@@ -20,45 +92,18 @@ export function Mascot() {
         // eslint-disable-next-line @next/next/no-img-element
         <img src={CUSTOM} alt="" className="m-bob h-28 w-28 object-contain" />
       ) : (
-        <svg viewBox="0 0 160 130" className="m-anim h-28 w-36" data-phase={phase} aria-hidden="true" focusable="false">
-          {/* keyboard */}
-          <rect x="22" y="104" width="116" height="16" rx="3" fill="#171717" />
-          <g fill="#D7FF38">
-            {[30, 44, 58, 72, 86, 100, 114].map((x) => (
-              <rect key={x} className="m-key" x={x} y="108" width="10" height="8" rx="1" />
-            ))}
-          </g>
-          {/* tubuh */}
-          <g className="m-head">
-            <line x1="80" y1="30" x2="80" y2="14" stroke="#171717" strokeWidth="3" />
-            <circle cx="80" cy="11" r="5.5" fill="#FF6B35" stroke="#171717" strokeWidth="2.5" />
-            <ellipse cx="80" cy="66" rx="38" ry="34" fill="#3457FF" stroke="#171717" strokeWidth="3.5" />
-            <ellipse cx="66" cy="50" rx="8" ry="5" fill="#fff" opacity="0.35" />
-            <circle cx="66" cy="62" r="9" fill="#fff" stroke="#171717" strokeWidth="2.5" />
-            <circle className="m-pupil" cx="66" cy="63" r="4" fill="#171717" />
-            <circle cx="94" cy="62" r="9" fill="#fff" stroke="#171717" strokeWidth="2.5" />
-            <circle className="m-pupil" cx="94" cy="63" r="4" fill="#171717" />
-            <path d="M72 80 Q80 87 88 80" stroke="#171717" strokeWidth="3" fill="none" strokeLinecap="round" />
-          </g>
-          {/* lengan */}
-          <path className="m-arm-l" d="M50 80 Q42 92 56 102" stroke="#171717" strokeWidth="7" fill="none" strokeLinecap="round" />
-          <path className="m-arm-r" d="M110 80 Q118 92 104 102" stroke="#171717" strokeWidth="7" fill="none" strokeLinecap="round" />
-          {/* gelembung berpikir */}
-          <g className="m-bubble">
-            <circle cx="122" cy="34" r="3" fill="#fff" stroke="#171717" strokeWidth="2" />
-            <ellipse cx="136" cy="18" rx="19" ry="11" fill="#fff" stroke="#171717" strokeWidth="2.5" />
-            <g fill="#171717">
-              <circle className="m-dot" cx="128" cy="18" r="2.4" />
-              <circle className="m-dot" cx="136" cy="18" r="2.4" />
-              <circle className="m-dot" cx="144" cy="18" r="2.4" />
-            </g>
-          </g>
-        </svg>
+        <div style={{ position: "relative", width: w, height: h }} aria-hidden="true">
+          <div style={layer("/puck/puck-sprite.png")} />
+        </div>
       )}
-      <p className="font-display text-lg font-bold" aria-hidden="true">
-        {phase === "typing" ? "Sedang mengetik…" : "Hmm, lagi mikir…"}
-      </p>
-      <p className="nb-mono">Mohon tunggu sebentar</p>
+      {caption && (
+        <>
+          <p className="font-display text-lg font-bold" aria-hidden="true">
+            {LABEL[current]}
+          </p>
+          <p className="nb-mono">Mohon tunggu sebentar</p>
+        </>
+      )}
     </div>
   );
 }

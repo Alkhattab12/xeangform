@@ -1,0 +1,6 @@
+{
+  "image": "puck-sprite.png",
+  "frame": { "w": 172, "h": 132 },
+  "cols": 8,
+  "rows": { "idle": 0, "typing": 1, "thinking": 2, "working": 3, "success": 4, "error": 5 }
+}
