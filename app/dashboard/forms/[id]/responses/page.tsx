@@ -61,6 +61,7 @@ export default async function ResponsesPage({
       <nav aria-label="Navigasi halaman" className="nb-mono flex flex-wrap gap-4">
         <Link href="/dashboard" className="underline underline-offset-4">← Dashboard</Link>
         <Link href={`/dashboard/forms/${id}`} className="underline underline-offset-4">Editor form</Link>
+        <Link href={`/dashboard/forms/${id}/analytics`} className="underline underline-offset-4">Analitik</Link>
       </nav>
       <p className="nb-mono mt-6">Respons / {form.status === "published" ? "Terbit" : form.status === "archived" ? "Arsip" : "Draft"}</p>
       <h1 className="mt-2 break-words font-display text-[clamp(2rem,6vw,3.5rem)] font-bold">{form.title as string}</h1>

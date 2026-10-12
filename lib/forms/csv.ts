@@ -4,7 +4,7 @@ import { isInputType, type FormField } from "./schema";
 const BOM = "\uFEFF"; // agar Excel membaca UTF-8 (huruf Indonesia) dengan benar
 
 /** Kutip sel; lindungi dari CSV/formula injection (=, +, -, @) untuk teks bebas. */
-function cell(value: string, guard: boolean): string {
+export function cell(value: string, guard: boolean): string {
   let s = value;
   if (guard && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   if (/[",\r\n]/.test(s)) s = `"${s.replace(/"/g, '""')}"`;
