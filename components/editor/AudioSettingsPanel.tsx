@@ -70,6 +70,7 @@ import {
   deleteUploadedAudioAction,
   getUserAudioLibraryAction,
   uploadAudioTrackAction,
+  type AudioUploadResult,
 } from "@/app/actions/audio";
 
 type Props = {
@@ -315,61 +316,83 @@ export function AudioSettingsPanel({ audio, activeTheme, formId, onChange }: Pro
 
     const newTracks: PlaylistTrack[] = [];
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      setUploadStatus(`Memeriksa berkas ${i + 1}/${files.length}: ${file.name}…`);
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        setUploadStatus(`Memeriksa berkas ${i + 1}/${files.length}: ${file.name}…`);
 
-      // 1. Validasi lokal browser (magic bytes & durasi)
-      const valid = await validateAudioFile(file);
-      if (!valid.ok) {
-        setUploadError(`Berkas "${file.name}": ${valid.error}`);
+        // 1. Validasi lokal browser (magic bytes & durasi)
+        const valid = await validateAudioFile(file);
+        if (!valid.ok) {
+          setUploadError(`Berkas "${file.name}": ${valid.error}`);
+          setIsUploading(false);
+          setUploadStatus(null);
+          if (fileInputRef.current) fileInputRef.current.value = "";
+          return;
+        }
+
+        const basePercent = 25 + Math.floor((i / files.length) * 65);
+        setUploadProgressPercent(basePercent);
+        setUploadStatus(`Mengunggah "${file.name}" (${(file.size / (1024 * 1024)).toFixed(1)} MB)…`);
+
+        // 2. Unggah ke Server Action
+        const formData = new FormData();
+        formData.append("file", file);
+        if (formId) formData.append("formId", formId);
+        formData.append("title", file.name.replace(/\.[^/.]+$/, "").slice(0, 100));
+        formData.append("duration", valid.duration.toString());
+
+        // Simulasi progress tick saat upload berlangsung
+        const tickTimer = setInterval(() => {
+          setUploadProgressPercent((prev) => (prev < 85 ? prev + 5 : prev));
+        }, 300);
+
+        let res: AudioUploadResult;
+        try {
+          res = await uploadAudioTrackAction(formData);
+        } finally {
+          clearInterval(tickTimer);
+        }
+
+        if (!res.ok) {
+          setUploadError(`Gagal mengunggah "${file.name}": ${res.error}`);
+          setIsUploading(false);
+          setUploadStatus(null);
+          if (fileInputRef.current) fileInputRef.current.value = "";
+          return;
+        }
+
+        newTracks.push(res.track);
+        setUploadProgressPercent(25 + Math.floor(((i + 1) / files.length) * 65));
+      }
+
+      setUploadProgressPercent(100);
+      setUploadStatus("Berhasil diproses! Menambahkan ke daftar putar…");
+
+      // Gabungkan dengan playlist aktif
+      const updated = [...currentPlaylist, ...newTracks];
+      onChange({
+        playlist: updated,
+        trackId: newTracks[0].id,
+        title: newTracks[0].title,
+        artist: newTracks[0].artist,
+        duration: newTracks[0].duration,
+        customUrl: newTracks[0].src,
+      });
+
+      setTimeout(() => {
         setIsUploading(false);
         setUploadStatus(null);
         if (fileInputRef.current) fileInputRef.current.value = "";
-        return;
-      }
-
-      setUploadProgressPercent(30 + Math.floor((i / files.length) * 50));
-      setUploadStatus(`Mengunggah "${file.name}" ke server penyimpanan…`);
-
-      // 2. Unggah ke Server Action
-      const formData = new FormData();
-      formData.append("file", file);
-      if (formId) formData.append("formId", formId);
-      formData.append("title", file.name.replace(/\.[^/.]+$/, "").slice(0, 100));
-      formData.append("duration", valid.duration.toString());
-
-      const res = await uploadAudioTrackAction(formData);
-      if (!res.ok) {
-        setUploadError(`Gagal mengunggah "${file.name}": ${res.error}`);
-        setIsUploading(false);
-        setUploadStatus(null);
-        if (fileInputRef.current) fileInputRef.current.value = "";
-        return;
-      }
-
-      newTracks.push(res.track);
-    }
-
-    setUploadProgressPercent(100);
-    setUploadStatus("Berhasil diproses! Menambahkan ke daftar putar…");
-
-    // Gabungkan dengan playlist aktif
-    const updated = [...currentPlaylist, ...newTracks];
-    onChange({
-      playlist: updated,
-      trackId: newTracks[0].id,
-      title: newTracks[0].title,
-      artist: newTracks[0].artist,
-      duration: newTracks[0].duration,
-      customUrl: newTracks[0].src,
-    });
-
-    setTimeout(() => {
+      }, 800);
+    } catch (err: unknown) {
+      console.error("Audio upload error:", err);
+      const msg = err instanceof Error ? err.message : "Terjadi kesalahan jaringan atau server saat mengunggah.";
+      setUploadError(`Gagal mengunggah audio: ${msg}`);
       setIsUploading(false);
       setUploadStatus(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
-    }, 1000);
+    }
   };
 
   // Status informatif banner

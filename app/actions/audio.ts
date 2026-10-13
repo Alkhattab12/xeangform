@@ -4,6 +4,7 @@ import { customAlphabet } from "nanoid";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { serviceRoleKey } from "@/lib/supabase/env";
 import {
   playlistTrackSchema,
   type PlaylistTrack,
@@ -24,6 +25,28 @@ export type UserLibraryResult =
 function sanitizeFilename(name: string): string {
   const clean = name.replace(/[^a-zA-Z0-9._-]/g, "_");
   return clean.slice(-80);
+}
+
+function getSafeStorageClient(supabase: Awaited<ReturnType<typeof createClient>>) {
+  try {
+    if (serviceRoleKey()) {
+      return createAdminClient().storage;
+    }
+  } catch {
+    // Abaikan jika service role key tidak tersedia di env
+  }
+  return supabase.storage;
+}
+
+function getSafeDbClient(supabase: Awaited<ReturnType<typeof createClient>>) {
+  try {
+    if (serviceRoleKey()) {
+      return createAdminClient();
+    }
+  } catch {
+    // Abaikan jika service role key tidak tersedia di env
+  }
+  return supabase;
 }
 
 /**
@@ -82,51 +105,67 @@ export async function uploadAudioTrackAction(formData: FormData): Promise<AudioU
     // Unggah ke Supabase Storage
     let publicUrl = "";
     try {
-      const admin = createAdminClient();
       const buffer = Buffer.from(arrayBuffer);
       const mimeType = file.type || `audio/${format}`;
+      const storage = getSafeStorageClient(supabase);
 
-      let { data: uploadData, error: uploadErr } = await admin.storage
+      let { data: uploadData, error: uploadErr } = await storage
         .from("form-audio")
         .upload(storagePath, buffer, {
           contentType: mimeType,
-          upsert: false,
+          upsert: true,
         });
 
-      // Self-healing: jika bucket belum ada, buat otomatis saat upload pertama
+      // Self-healing jika bucket belum ada
       if (
         uploadErr &&
         (uploadErr.message?.toLowerCase().includes("bucket not found") ||
           uploadErr.message?.toLowerCase().includes("not found") ||
           (uploadErr as { statusCode?: string }).statusCode === "404")
       ) {
-        await admin.storage.createBucket("form-audio", {
-          public: true,
-          fileSizeLimit: MAX_AUDIO_SIZE_BYTES,
-          allowedMimeTypes: ["audio/mpeg", "audio/wav", "audio/ogg", "audio/mp4", "audio/x-m4a", "audio/aac"],
-        });
+        if (serviceRoleKey()) {
+          try {
+            const admin = createAdminClient();
+            await admin.storage.createBucket("form-audio", {
+              public: true,
+              fileSizeLimit: MAX_AUDIO_SIZE_BYTES,
+              allowedMimeTypes: ["audio/mpeg", "audio/wav", "audio/ogg", "audio/mp4", "audio/x-m4a", "audio/aac"],
+            });
 
-        const retry = await admin.storage
-          .from("form-audio")
-          .upload(storagePath, buffer, {
-            contentType: mimeType,
-            upsert: false,
-          });
-        uploadErr = retry.error;
+            const retry = await admin.storage
+              .from("form-audio")
+              .upload(storagePath, buffer, {
+                contentType: mimeType,
+                upsert: true,
+              });
+            uploadErr = retry.error;
+          } catch {
+            // lanjut ke pengecekan error
+          }
+        } else {
+          return {
+            ok: false,
+            error: "Bucket 'form-audio' belum dibuat di Supabase Storage. Harap buat bucket 'form-audio' (Public) di dashboard Supabase.",
+          };
+        }
       }
 
       if (uploadErr) {
         console.error("Supabase Storage upload error:", uploadErr);
-        return { ok: false, error: "Gagal menyimpan file audio ke server penyimpanan." };
+        return {
+          ok: false,
+          error: `Gagal menyimpan ke Supabase Storage: ${uploadErr.message || "Izin penyimpanan ditolak"}`,
+        };
       }
 
-      const { data: pubData } = admin.storage.from("form-audio").getPublicUrl(storagePath);
+      const { data: pubData } = storage.from("form-audio").getPublicUrl(storagePath);
       publicUrl = pubData.publicUrl;
     } catch (storageErr) {
-      console.warn("Storage upload exception (fallback):", storageErr);
+      console.warn("Storage upload exception:", storageErr);
+      const msg = storageErr instanceof Error ? storageErr.message : "Kesalahan server penyimpanan";
       return {
         ok: false,
-        error: "Layanan penyimpanan cloud belum siap atau kunci service role belum disetel.",
+        error: `Gagal mengunggah file ke cloud: ${msg}`,
       };
     }
 
@@ -145,9 +184,8 @@ export async function uploadAudioTrackAction(formData: FormData): Promise<AudioU
 
     // Rekam ke user_audio_tracks jika tabel tersedia
     try {
-      const admin = createAdminClient();
-      await admin.from("user_audio_tracks").insert({
-        id: undefined,
+      const db = getSafeDbClient(supabase);
+      await db.from("user_audio_tracks").insert({
         owner_id: user.id,
         title: track.title,
         artist: track.artist,
@@ -184,10 +222,10 @@ export async function getUserAudioLibraryAction(): Promise<UserLibraryResult> {
       return { ok: false, error: "Silakan masuk terlebih dahulu." };
     }
 
-    const admin = createAdminClient();
+    const db = getSafeDbClient(supabase);
 
     // 1. Coba baca dari tabel user_audio_tracks
-    const { data: rows, error } = await admin
+    const { data: rows, error } = await db
       .from("user_audio_tracks")
       .select("id,title,artist,storage_path,public_url,size_bytes,duration,format")
       .eq("owner_id", user.id)
@@ -210,7 +248,7 @@ export async function getUserAudioLibraryAction(): Promise<UserLibraryResult> {
     }
 
     // 2. Fallback: agregasi dari form milik pengguna yang sudah ada
-    const { data: userForms } = await admin
+    const { data: userForms } = await db
       .from("forms")
       .select("settings_json")
       .eq("owner_id", user.id);
@@ -218,7 +256,7 @@ export async function getUserAudioLibraryAction(): Promise<UserLibraryResult> {
     const fallbackTracks: PlaylistTrack[] = [];
     const seenSrc = new Set<string>();
 
-    if (userForms) {
+    if (Array.isArray(userForms)) {
       for (const f of userForms) {
         const s = f.settings_json as { audio?: { playlist?: PlaylistTrack[] } };
         const playlist = s?.audio?.playlist;
@@ -235,7 +273,7 @@ export async function getUserAudioLibraryAction(): Promise<UserLibraryResult> {
 
     return { ok: true, tracks: fallbackTracks };
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Gagal mengambil pustaka audio.";
+    const msg = err instanceof Error ? err.message : "Gagal memuat pustaka audio.";
     return { ok: false, error: msg };
   }
 }
@@ -259,13 +297,14 @@ export async function deleteUploadedAudioAction(storagePath: string): Promise<{ 
       return { ok: false, error: "Akses ditolak: berkas bukan milik Anda." };
     }
 
-    const admin = createAdminClient();
+    const storage = getSafeStorageClient(supabase);
+    const db = getSafeDbClient(supabase);
 
     // Hapus dari Storage
-    await admin.storage.from("form-audio").remove([storagePath]);
+    await storage.from("form-audio").remove([storagePath]);
 
     // Hapus dari tabel jika ada
-    await admin.from("user_audio_tracks").delete().eq("storage_path", storagePath).eq("owner_id", user.id);
+    await db.from("user_audio_tracks").delete().eq("storage_path", storagePath).eq("owner_id", user.id);
 
     return { ok: true };
   } catch (err) {
