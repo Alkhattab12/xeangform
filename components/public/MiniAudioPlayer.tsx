@@ -517,18 +517,18 @@ export function MiniAudioPlayer({
   const position = audioSettings.playerPosition || "bottom_right";
   const getPositionClass = () => {
     if (audioSettings.playerStyle === "bottom_dock" || position === "bottom_dock") {
-      return "fixed bottom-0 left-0 right-0 z-40 px-3 pb-2 pt-1 sm:pb-3";
+      return "fixed bottom-0 left-0 right-0 z-40 px-2 sm:px-3 pb-2 pt-1 sm:pb-3 w-full";
     }
     switch (position) {
       case "top_left":
-        return "fixed top-3 left-3 z-40 max-w-xs sm:max-w-sm";
+        return "fixed top-2 left-2 right-2 sm:right-auto sm:top-3 sm:left-3 z-40 max-w-[calc(100vw-1rem)] sm:max-w-sm";
       case "top_right":
-        return "fixed top-3 right-3 z-40 max-w-xs sm:max-w-sm";
+        return "fixed top-2 left-2 right-2 sm:left-auto sm:top-3 sm:right-3 z-40 max-w-[calc(100vw-1rem)] sm:max-w-sm";
       case "bottom_left":
-        return "fixed bottom-4 left-4 z-40 max-w-xs sm:max-w-sm";
+        return "fixed bottom-2 left-2 right-2 sm:right-auto sm:bottom-4 sm:left-4 z-40 max-w-[calc(100vw-1rem)] sm:max-w-sm";
       case "bottom_right":
       default:
-        return "fixed bottom-4 right-4 z-40 max-w-xs sm:max-w-sm";
+        return "fixed bottom-2 left-2 right-2 sm:left-auto sm:bottom-4 sm:right-4 z-40 max-w-[calc(100vw-1rem)] sm:max-w-sm";
     }
   };
 
@@ -544,11 +544,11 @@ export function MiniAudioPlayer({
   const renderVisualizer = () => {
     const bars = [40, 80, 50, 95];
     return (
-      <div className="flex h-4 items-end gap-0.5 shrink-0" aria-hidden="true">
+      <div className="flex h-3.5 sm:h-4 items-end gap-0.5 shrink-0" aria-hidden="true">
         {bars.map((h, i) => (
           <span
             key={i}
-            className={`w-1 rounded-sm bg-current transition-all duration-150 ${
+            className={`w-0.5 sm:w-1 rounded-sm bg-current transition-all duration-150 ${
               isPlaying && !reducedMotion ? "animate-pulse" : ""
             }`}
             style={{
@@ -568,7 +568,7 @@ export function MiniAudioPlayer({
         <button
           type="button"
           onClick={() => setIsDismissed(false)}
-          className={`flex h-9 items-center gap-1.5 px-3 font-bold text-xs ${getThemeChassis()}`}
+          className={`flex h-8 sm:h-9 items-center gap-1.5 px-2.5 sm:px-3 font-bold text-xs ${getThemeChassis()}`}
         >
           <Headphones size={14} />
           <span>Musik</span>
@@ -593,16 +593,16 @@ export function MiniAudioPlayer({
       {autoplayBlocked && !isPlaying && (
         <div
           role="status"
-          className="mb-2 flex items-center justify-between gap-2 border-2 border-line bg-accent p-2 text-xs font-bold text-[color:var(--on-accent)] shadow-[3px_3px_0px_#000]"
+          className="mb-2 flex items-center justify-between gap-2 border-2 border-line bg-accent p-2 text-xs font-bold text-[color:var(--on-accent)] shadow-[3px_3px_0px_#000] min-w-0"
         >
-          <span className="flex items-center gap-1.5">
-            <Headphones size={14} />
-            Ketuk untuk menyalakan musik latar
+          <span className="flex items-center gap-1.5 min-w-0 truncate">
+            <Headphones size={14} className="shrink-0" />
+            <span className="truncate">Ketuk untuk putar musik</span>
           </span>
           <button
             type="button"
             onClick={togglePlay}
-            className="flex h-7 items-center gap-1 bg-surface px-2.5 text-ink border border-line active:scale-95"
+            className="flex h-7 items-center gap-1 bg-surface px-2.5 text-ink border border-line active:scale-95 shrink-0"
           >
             <Play size={12} /> Putar
           </button>
@@ -611,12 +611,12 @@ export function MiniAudioPlayer({
 
       {/* 1. MINIMAL ICON MODE */}
       {isMinimal ? (
-        <div className={`flex items-center gap-1.5 p-1.5 ${getThemeChassis()}`}>
+        <div className={`flex items-center gap-1.5 p-1.5 min-w-0 ${getThemeChassis()}`}>
           <button
             type="button"
             onClick={togglePlay}
             aria-label={isPlaying ? "Jeda musik latar" : "Putar musik latar"}
-            className="flex h-9 w-9 items-center justify-center border-2 border-current transition-transform active:scale-95"
+            className="flex h-9 w-9 items-center justify-center border-2 border-current transition-transform active:scale-95 shrink-0"
           >
             {isPlaying ? <Pause size={15} /> : <Play size={15} className="ml-0.5" />}
           </button>
@@ -624,7 +624,7 @@ export function MiniAudioPlayer({
             type="button"
             onClick={toggleMute}
             aria-label={isMuted ? "Batal bisukan musik" : "Bisukan musik"}
-            className="flex h-9 w-9 items-center justify-center border-2 border-current hover:opacity-80"
+            className="flex h-9 w-9 items-center justify-center border-2 border-current hover:opacity-80 shrink-0"
           >
             {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
           </button>
@@ -633,7 +633,7 @@ export function MiniAudioPlayer({
               type="button"
               onClick={() => setIsDismissed(true)}
               aria-label="Tutup pemutar musik"
-              className="flex h-7 w-7 items-center justify-center opacity-60 hover:opacity-100"
+              className="flex h-7 w-7 items-center justify-center opacity-60 hover:opacity-100 shrink-0"
             >
               <X size={13} />
             </button>
@@ -641,8 +641,8 @@ export function MiniAudioPlayer({
         </div>
       ) : (
         /* 2. STANDARD / COMPACT / EXPANDED PLAYER */
-        <div className={`p-2.5 sm:p-3 transition-all ${getThemeChassis()}`}>
-          <div className="flex items-center justify-between gap-2.5">
+        <div className={`p-2 sm:p-3 transition-all w-full max-w-full min-w-0 overflow-hidden ${getThemeChassis()}`}>
+          <div className="flex items-center justify-between gap-1 sm:gap-2.5 min-w-0">
             {/* Playlist Previous Track */}
             {playlist.length > 1 && (
               <button
@@ -660,7 +660,7 @@ export function MiniAudioPlayer({
               type="button"
               onClick={togglePlay}
               aria-label={isPlaying ? "Jeda musik latar" : "Putar musik latar"}
-              className="flex h-8 w-8 shrink-0 items-center justify-center border-2 border-current transition-transform active:scale-95"
+              className="flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center border-2 border-current transition-transform active:scale-95"
             >
               {isPlaying ? <Pause size={14} /> : <Play size={14} className="ml-0.5" />}
             </button>
@@ -679,7 +679,7 @@ export function MiniAudioPlayer({
 
             {/* Visualizer & Track Info */}
             <div
-              className="flex min-w-0 flex-1 cursor-pointer items-center gap-2"
+              className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 sm:gap-2 overflow-hidden"
               onClick={() => setIsExpanded((prev) => !prev)}
               role="button"
               tabIndex={0}
@@ -693,14 +693,14 @@ export function MiniAudioPlayer({
               aria-label="Detail audio & pengaturan volume"
             >
               {renderVisualizer()}
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 overflow-hidden">
                 {vis.showTitle && (
-                  <p className="truncate text-xs font-bold leading-tight">
+                  <p className="truncate text-[11px] sm:text-xs font-bold leading-tight">
                     {activeTrack?.title || "Musik Latar"}
                   </p>
                 )}
                 {vis.showArtist && (
-                  <p className="truncate text-[10px] opacity-75">
+                  <p className="truncate text-[9px] sm:text-[10px] opacity-75">
                     {activeTrack?.artist || "Xeangform Sound"}
                     {playlist.length > 1 ? ` (${currentIndex + 1}/${playlist.length})` : ""}
                     {" · "}
@@ -716,9 +716,9 @@ export function MiniAudioPlayer({
                 type="button"
                 onClick={toggleMute}
                 aria-label={isMuted ? "Batal bisukan suara" : "Bisukan suara"}
-                className="flex h-8 w-8 shrink-0 items-center justify-center border-2 border-current transition-transform active:scale-95"
+                className="flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center border-2 border-current transition-transform active:scale-95"
               >
-                {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                {isMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
               </button>
             )}
 
@@ -728,11 +728,11 @@ export function MiniAudioPlayer({
                 type="button"
                 onClick={() => setShowPlaylistDrawer((prev) => !prev)}
                 aria-label="Daftar lagu playlist"
-                className={`flex h-8 w-8 shrink-0 items-center justify-center border-2 border-current ${
+                className={`flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center border-2 border-current ${
                   showPlaylistDrawer ? "bg-current text-surface" : "opacity-75 hover:opacity-100"
                 }`}
               >
-                <ListMusic size={14} />
+                <ListMusic size={13} />
               </button>
             )}
 
@@ -741,9 +741,9 @@ export function MiniAudioPlayer({
               type="button"
               onClick={() => setIsExpanded((prev) => !prev)}
               aria-label={isExpanded ? "Tutup panel volume" : "Buka panel volume"}
-              className="flex h-8 w-8 shrink-0 items-center justify-center opacity-70 hover:opacity-100"
+              className="flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center opacity-70 hover:opacity-100"
             >
-              {isExpanded ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+              {isExpanded ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
             </button>
 
             {/* Dismiss Button */}
@@ -752,9 +752,9 @@ export function MiniAudioPlayer({
                 type="button"
                 onClick={() => setIsDismissed(true)}
                 aria-label="Sembunyikan pemutar musik"
-                className="flex h-7 w-7 shrink-0 items-center justify-center opacity-50 hover:opacity-100"
+                className="flex h-6 w-6 sm:h-7 sm:w-7 shrink-0 items-center justify-center opacity-50 hover:opacity-100"
               >
-                <X size={14} />
+                <X size={13} />
               </button>
             )}
           </div>

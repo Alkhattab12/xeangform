@@ -358,8 +358,8 @@ export function FormEditor({ initial }: { initial: Initial }) {
   })();
 
   return (
-    <div className="mx-auto max-w-[1400px] px-4 pb-24 pt-4">
-      <div className="nb-panel nb-panel-strong sticky top-0 z-30 mb-4 flex flex-wrap items-center gap-3 p-3">
+    <div className="mx-auto max-w-[1400px] w-full min-w-0 px-2.5 sm:px-4 pb-24 pt-4 overflow-x-hidden">
+      <div className="nb-panel nb-panel-strong sticky top-0 z-30 mb-4 flex flex-wrap items-center gap-2 sm:gap-3 p-2.5 sm:p-3 min-w-0">
         <Link href="/dashboard" className={smallBtn}>
           <ArrowLeft size={16} aria-hidden="true" /> Dashboard
         </Link>
@@ -405,7 +405,7 @@ export function FormEditor({ initial }: { initial: Initial }) {
         </div>
       )}
 
-      <div className="mb-4 grid grid-cols-3 gap-2 lg:hidden" role="group" aria-label="Panel editor">
+      <div className="mb-4 grid grid-cols-3 gap-1.5 sm:gap-2 lg:hidden min-w-0" role="group" aria-label="Panel editor">
         {(
           [
             ["fields", "Kolom"],
@@ -419,7 +419,7 @@ export function FormEditor({ initial }: { initial: Initial }) {
         ))}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)_300px]">
+      <div className="grid gap-4 w-full max-w-full min-w-0 overflow-x-hidden lg:grid-cols-[220px_minmax(0,1fr)_300px]">
         <aside aria-label="Pustaka kolom" className={`${show("fields")} lg:sticky lg:top-24 lg:self-start`}>
           <FieldLibrary onAdd={addField} />
         </aside>
@@ -498,7 +498,7 @@ export function FormEditor({ initial }: { initial: Initial }) {
           )}
         </section>
 
-        <aside aria-label="Pengaturan kolom" className={`${show("settings")} lg:sticky lg:top-24 lg:max-h-[calc(100dvh-7rem)] lg:self-start lg:overflow-y-auto`}>
+        <aside aria-label="Pengaturan kolom" className={`${show("settings")} w-full max-w-full min-w-0 overflow-x-hidden lg:sticky lg:top-24 lg:max-h-[calc(100dvh-7rem)] lg:self-start lg:overflow-y-auto`}>
           {selected ? (
             <div>
               <button type="button" onClick={() => setSelectedId(null)} className={`${smallBtn} mb-3`}>
@@ -510,11 +510,11 @@ export function FormEditor({ initial }: { initial: Initial }) {
               </div>
             </div>
           ) : (
-            <div>
-              <div className="mb-3 grid grid-cols-3 gap-2" role="group" aria-label="Pengaturan form">
-                <button type="button" aria-pressed={asideTab === "form"} onClick={() => setAsideTab("form")} className={`nb-btn min-h-10 px-2 py-2 text-xs sm:text-sm font-bold ${asideTab === "form" ? "" : "nb-btn-ghost"}`}>Form</button>
-                <button type="button" aria-pressed={asideTab === "theme"} onClick={() => setAsideTab("theme")} className={`nb-btn min-h-10 px-2 py-2 text-xs sm:text-sm font-bold ${asideTab === "theme" ? "" : "nb-btn-ghost"}`}>Tema</button>
-                <button type="button" aria-pressed={asideTab === "audio"} onClick={() => setAsideTab("audio")} className={`nb-btn min-h-10 px-2 py-2 text-xs sm:text-sm font-bold ${asideTab === "audio" ? "" : "nb-btn-ghost"}`}>Audio</button>
+            <div className="w-full max-w-full min-w-0 overflow-x-hidden">
+              <div className="mb-3 grid grid-cols-3 gap-1.5 sm:gap-2 min-w-0" role="group" aria-label="Pengaturan form">
+                <button type="button" aria-pressed={asideTab === "form"} onClick={() => setAsideTab("form")} className={`nb-btn min-h-10 px-1.5 sm:px-2 py-2 text-xs sm:text-sm font-bold min-w-0 truncate ${asideTab === "form" ? "" : "nb-btn-ghost"}`}>Form</button>
+                <button type="button" aria-pressed={asideTab === "theme"} onClick={() => setAsideTab("theme")} className={`nb-btn min-h-10 px-1.5 sm:px-2 py-2 text-xs sm:text-sm font-bold min-w-0 truncate ${asideTab === "theme" ? "" : "nb-btn-ghost"}`}>Tema</button>
+                <button type="button" aria-pressed={asideTab === "audio"} onClick={() => setAsideTab("audio")} className={`nb-btn min-h-10 px-1.5 sm:px-2 py-2 text-xs sm:text-sm font-bold min-w-0 truncate ${asideTab === "audio" ? "" : "nb-btn-ghost"}`}>Audio</button>
               </div>
               {asideTab === "form" ? (
                 <FormSettingsPanel settings={settings} onChange={changeSettings} />
