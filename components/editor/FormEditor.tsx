@@ -524,6 +524,7 @@ export function FormEditor({ initial }: { initial: Initial }) {
                 <AudioSettingsPanel
                   audio={settings.audio ?? DEFAULT_AUDIO_SETTINGS}
                   activeTheme={theme?.preset}
+                  formId={initial.id}
                   onChange={(patch) => {
                     changeSettings({
                       audio: { ...(settings.audio ?? DEFAULT_AUDIO_SETTINGS), ...patch },

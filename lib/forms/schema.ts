@@ -84,26 +84,99 @@ export const formSchemaJson = z
     });
   });
 
-export const AUDIO_START_MODES = ["first_interaction", "manual_play"] as const;
+export const AUDIO_START_MODES = ["autoplay_immediate", "first_interaction", "manual_play"] as const;
 export type AudioStartMode = (typeof AUDIO_START_MODES)[number];
 
-export const AUDIO_PLAYER_STYLES = ["floating_pill", "bottom_dock", "header_badge", "minimal_icon"] as const;
+export const AUDIO_LOOP_MODES = ["none", "repeat_one", "repeat_all"] as const;
+export type AudioLoopMode = (typeof AUDIO_LOOP_MODES)[number];
+
+export const AUDIO_PLAYBACK_MODES = ["sequential", "shuffle"] as const;
+export type AudioPlaybackMode = (typeof AUDIO_PLAYBACK_MODES)[number];
+
+export const AUDIO_PLAYER_STYLES = [
+  "floating_pill",
+  "bottom_dock",
+  "expanded_panel",
+  "minimal_icon",
+  "custom_brand",
+  "header_badge",
+] as const;
 export type AudioPlayerStyle = (typeof AUDIO_PLAYER_STYLES)[number];
+
+export const AUDIO_PLAYER_POSITIONS = [
+  "bottom_right",
+  "bottom_left",
+  "top_right",
+  "top_left",
+  "bottom_dock",
+] as const;
+export type AudioPlayerPosition = (typeof AUDIO_PLAYER_POSITIONS)[number];
+
+export const playlistTrackSchema = z.object({
+  id: z.string().min(1).max(64),
+  title: z.string().min(1).max(120),
+  artist: z.string().max(100).default(""),
+  src: z.string().max(2000),
+  storagePath: z.string().max(500).optional(),
+  duration: z.number().min(0).max(7200).default(0),
+  sizeBytes: z.number().int().min(0).optional(),
+  format: z.string().max(20).optional(),
+  license: z.string().max(150).optional(),
+  source: z.enum(["builtin", "upload", "custom_url"]).default("builtin"),
+});
+export type PlaylistTrack = z.infer<typeof playlistTrackSchema>;
+
+export const playerThemeSchema = z.object({
+  mode: z.enum(["match_form", "light", "dark", "custom"]).default("match_form"),
+  bg: hex.optional(),
+  fg: hex.optional(),
+  accent: hex.optional(),
+  radius: z.number().int().min(0).max(32).optional(),
+});
+export type PlayerTheme = z.infer<typeof playerThemeSchema>;
+
+export const playerVisibilitySchema = z.object({
+  showTitle: z.boolean().default(true),
+  showArtist: z.boolean().default(true),
+  showProgress: z.boolean().default(true),
+  showVolume: z.boolean().default(true),
+  showPlaylist: z.boolean().default(true),
+  showCloseButton: z.boolean().default(true),
+});
+export type PlayerVisibility = z.infer<typeof playerVisibilitySchema>;
 
 export const audioSettingsSchema = z.object({
   enabled: z.boolean().default(false),
   trackId: z.string().default("lofi-focus"),
-  customUrl: z.string().max(1000).optional(),
-  title: z.string().max(100).default("Midnight Study Lo-Fi"),
+  customUrl: z.string().max(2000).optional(),
+  title: z.string().max(120).default("Midnight Study Lo-Fi"),
   artist: z.string().max(100).default("Xeangform Soundscape"),
   sourceUrl: z.string().max(500).optional(),
-  license: z.string().max(100).default("CC0 Public Domain"),
-  duration: z.number().min(0).max(3600).optional(),
+  license: z.string().max(150).default("CC0 Public Domain"),
+  duration: z.number().min(0).max(7200).optional(),
   volume: z.number().int().min(0).max(100).default(35),
   loop: z.boolean().default(true),
+  loopMode: z.enum(AUDIO_LOOP_MODES).default("repeat_all"),
   startMode: z.enum(AUDIO_START_MODES).default("first_interaction"),
+  playbackMode: z.enum(AUDIO_PLAYBACK_MODES).default("sequential"),
+  fadeIn: z.boolean().default(false),
+  fadeInDuration: z.number().min(0.2).max(10).default(2),
+  fadeOut: z.boolean().default(false),
+  fadeOutDuration: z.number().min(0.2).max(10).default(2),
+  pauseOnTabSwitch: z.boolean().default(true),
   stopOnSubmit: z.boolean().default(true),
   playerStyle: z.enum(AUDIO_PLAYER_STYLES).default("floating_pill"),
+  playerPosition: z.enum(AUDIO_PLAYER_POSITIONS).default("bottom_right"),
+  playerTheme: playerThemeSchema.default({ mode: "match_form" }),
+  visibility: playerVisibilitySchema.default({
+    showTitle: true,
+    showArtist: true,
+    showProgress: true,
+    showVolume: true,
+    showPlaylist: true,
+    showCloseButton: true,
+  }),
+  playlist: z.array(playlistTrackSchema).max(30).default([]),
   sfxEnabled: z.boolean().default(true),
 });
 export type AudioSettings = z.infer<typeof audioSettingsSchema>;
@@ -119,11 +192,48 @@ export const DEFAULT_AUDIO_SETTINGS: AudioSettings = {
   duration: 6,
   volume: 35,
   loop: true,
+  loopMode: "repeat_all",
   startMode: "first_interaction",
+  playbackMode: "sequential",
+  fadeIn: false,
+  fadeInDuration: 2,
+  fadeOut: false,
+  fadeOutDuration: 2,
+  pauseOnTabSwitch: true,
   stopOnSubmit: true,
   playerStyle: "floating_pill",
+  playerPosition: "bottom_right",
+  playerTheme: { mode: "match_form" },
+  visibility: {
+    showTitle: true,
+    showArtist: true,
+    showProgress: true,
+    showVolume: true,
+    showPlaylist: true,
+    showCloseButton: true,
+  },
+  playlist: [],
   sfxEnabled: true,
 };
+
+/** Mengambil daftar lagu aktif. Jika playlist kosong, buat dari single-track bawaan untuk kompatibilitas ke belakang. */
+export function resolvePlaylistTracks(audio: AudioSettings): PlaylistTrack[] {
+  if (Array.isArray(audio.playlist) && audio.playlist.length > 0) {
+    return audio.playlist;
+  }
+  const fallbackSrc = audio.customUrl || `/audio/tracks/${audio.trackId || "lofi-focus"}.wav`;
+  return [
+    {
+      id: audio.trackId || "default-track",
+      title: audio.title || "Musik Latar",
+      artist: audio.artist || "Xeangform Soundscape",
+      src: fallbackSrc,
+      duration: audio.duration ?? 6,
+      license: audio.license || "CC0 Public Domain",
+      source: audio.customUrl ? "custom_url" : "builtin",
+    },
+  ];
+}
 
 /** Pengaturan tingkat form (disimpan di forms.settings_json). */
 export const formSettingsSchema = z.object({

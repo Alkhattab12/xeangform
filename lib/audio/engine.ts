@@ -21,39 +21,111 @@ export function formatAudioTime(seconds: number): string {
 // Validasi File Audio Kustom (MIME, Header/Magic Bytes, Ukuran)
 // ========================================================
 export type AudioValidationResult =
-  | { ok: true; duration: number; format: "mp3" | "wav" | "ogg"; sizeBytes: number }
+  | { ok: true; duration: number; format: "mp3" | "wav" | "ogg" | "m4a" | "aac"; sizeBytes: number }
   | { ok: false; error: string };
 
-const MAX_AUDIO_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+export const MAX_AUDIO_SIZE_BYTES = 15 * 1024 * 1024; // 15 MB
+
+/**
+ * Transisi volume halus (fade in / fade out) tanpa clipping
+ */
+export function fadeAudioGain(
+  audio: HTMLAudioElement,
+  startVolGain: number,
+  targetVolGain: number,
+  durationSeconds: number,
+  onComplete?: () => void
+): () => void {
+  if (typeof window === "undefined" || !audio) return () => {};
+  const startTime = performance.now();
+  const durationMs = Math.max(100, durationSeconds * 1000);
+  let animationId: number;
+
+  const step = (now: number) => {
+    const elapsed = now - startTime;
+    const progress = Math.min(1, elapsed / durationMs);
+    // Smooth easing
+    const eased = progress < 0.5 ? 2 * progress * progress : -1 + (4 - 2 * progress) * progress;
+    const currentGain = startVolGain + (targetVolGain - startVolGain) * Math.max(0, Math.min(1, eased));
+    audio.volume = Math.max(0, Math.min(1, currentGain));
+
+    if (progress < 1) {
+      animationId = requestAnimationFrame(step);
+    } else {
+      audio.volume = Math.max(0, Math.min(1, targetVolGain));
+      onComplete?.();
+    }
+  };
+
+  animationId = requestAnimationFrame(step);
+  return () => cancelAnimationFrame(animationId);
+}
+
+export function detectAudioFormatFromBytes(bytes: Uint8Array): "mp3" | "wav" | "ogg" | "m4a" | "aac" | null {
+  if (bytes.length < 4) return null;
+
+  // RIFF....WAVE
+  if (
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes.length >= 12 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x41 &&
+    bytes[10] === 0x56 &&
+    bytes[11] === 0x45
+  ) {
+    return "wav";
+  }
+
+  // OggS
+  if (bytes[0] === 0x4f && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53) {
+    return "ogg";
+  }
+
+  // ID3 (MP3 dengan metadata tag)
+  if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) {
+    return "mp3";
+  }
+
+  // MP3 frame sync (0xFF dilanjutkan 0xE0 mask)
+  if (bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0) {
+    return "mp3";
+  }
+
+  // MP4 / M4A (ftyp box)
+  if (
+    bytes.length >= 12 &&
+    bytes[4] === 0x66 &&
+    bytes[5] === 0x74 &&
+    bytes[6] === 0x79 &&
+    bytes[7] === 0x70
+  ) {
+    return "m4a";
+  }
+
+  // AAC ADTS
+  if (bytes[0] === 0xff && (bytes[1] & 0xf0) === 0xf0) {
+    return "aac";
+  }
+
+  return null;
+}
 
 export async function validateAudioFile(file: File): Promise<AudioValidationResult> {
   if (file.size > MAX_AUDIO_SIZE_BYTES) {
-    return { ok: false, error: `Ukuran file (${(file.size / (1024 * 1024)).toFixed(1)} MB) melebihi batas maksimal 10 MB.` };
+    return { ok: false, error: `Ukuran file (${(file.size / (1024 * 1024)).toFixed(1)} MB) melebihi batas maksimal 15 MB.` };
   }
 
-  // Baca header 12 byte untuk memverifikasi magic bytes asli
+  // Baca header untuk memverifikasi magic bytes asli
   try {
-    const buffer = await file.slice(0, 16).arrayBuffer();
+    const buffer = await file.slice(0, 32).arrayBuffer();
     const bytes = new Uint8Array(buffer);
-    let format: "mp3" | "wav" | "ogg" | null = null;
-
-    // RIFF....WAVE
-    if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) {
-      if (bytes[8] === 0x57 && bytes[9] === 0x41 && bytes[10] === 0x56 && bytes[11] === 0x45) {
-        format = "wav";
-      }
-    }
-    // OggS
-    if (bytes[0] === 0x4f && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53) {
-      format = "ogg";
-    }
-    // ID3 (MP3 dengan metadata tag) atau frame sync 0xFF, 0xFB/0xF3/0xF2
-    if ((bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) || (bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0)) {
-      format = "mp3";
-    }
+    const format = detectAudioFormatFromBytes(bytes);
 
     if (!format) {
-      return { ok: false, error: "Format file tidak didukung atau header rusak. Gunakan file audio MP3, WAV, atau OGG asli." };
+      return { ok: false, error: "Format file tidak didukung atau header rusak. Gunakan file audio MP3, WAV, OGG, atau M4A/AAC asli." };
     }
 
     // Uji kemampuan decode & ambil durasi audio asli dari browser
@@ -152,15 +224,22 @@ class EditorAudioPreviewManager {
     }
   }
 
-  public play(src: string, volumePercent: number) {
+  private cancelFade: (() => void) | null = null;
+
+  public play(src: string, volumePercent: number, fadeInDuration = 0) {
     this.init();
     if (!this.audio) return;
 
+    if (this.cancelFade) {
+      this.cancelFade();
+      this.cancelFade = null;
+    }
+
     this.error = null;
-    this.audio.volume = volumeToGain(volumePercent);
+    const targetGain = volumeToGain(volumePercent);
 
     if (this.activeSrc === src && this.isPlaying) {
-      this.audio.pause();
+      this.pause();
       return;
     }
 
@@ -175,7 +254,17 @@ class EditorAudioPreviewManager {
       this.notify();
     }
 
-    this.audio.play().catch((e) => {
+    if (fadeInDuration > 0) {
+      this.audio.volume = 0;
+    } else {
+      this.audio.volume = targetGain;
+    }
+
+    this.audio.play().then(() => {
+      if (fadeInDuration > 0 && this.audio) {
+        this.cancelFade = fadeAudioGain(this.audio, 0, targetGain, fadeInDuration);
+      }
+    }).catch(() => {
       this.isPlaying = false;
       this.isLoading = false;
       this.error = "Pemutaran diblokir oleh browser atau file tidak dapat diputar.";
@@ -183,9 +272,24 @@ class EditorAudioPreviewManager {
     });
   }
 
-  public pause() {
-    if (this.audio) {
+  public pause(fadeOutDuration = 0) {
+    if (this.cancelFade) {
+      this.cancelFade();
+      this.cancelFade = null;
+    }
+    if (!this.audio) return;
+
+    if (fadeOutDuration > 0 && this.isPlaying) {
+      const currentGain = this.audio.volume;
+      this.cancelFade = fadeAudioGain(this.audio, currentGain, 0, fadeOutDuration, () => {
+        this.audio?.pause();
+        this.isPlaying = false;
+        this.notify();
+      });
+    } else {
       this.audio.pause();
+      this.isPlaying = false;
+      this.notify();
     }
   }
 
