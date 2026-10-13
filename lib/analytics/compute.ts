@@ -41,7 +41,7 @@ export function isAnswered(f: FormField, a: unknown): boolean {
     case "consent":
       return a === true;
     case "file":
-      return false;
+      return Array.isArray(a) && a.length > 0;
     default:
       return typeof a === "string" && a.trim() !== "";
   }

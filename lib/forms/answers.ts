@@ -1,4 +1,5 @@
 import type { FormField } from "./schema";
+import { formatFileSize, type UploadedFile } from "./files";
 
 export type ResponseMeta = {
   score?: { correct: number; total: number };
@@ -67,8 +68,11 @@ export function formatAnswer(f: FormField, v: unknown, mode: "ui" | "csv" = "ui"
       return v === true ? "Ya" : "Tidak";
     case "rating":
       return mode === "ui" ? `${String(v)} / ${f.ratingMax ?? 5}` : String(v);
-    case "file":
-      return "";
+    case "file": {
+      const list = Array.isArray(v) ? (v as UploadedFile[]) : [];
+      if (list.length === 0) return "";
+      return list.map((item) => `${item.originalFilename} (${formatFileSize(item.sizeBytes)})`).join("; ");
+    }
     default:
       return typeof v === "string" ? v : String(v);
   }

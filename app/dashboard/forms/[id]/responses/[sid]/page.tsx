@@ -6,6 +6,8 @@ import { deleteResponsesAction } from "@/app/actions/responses";
 import { ConfirmButton } from "@/components/dashboard/ConfirmButton";
 import { answerChips, formatAnswer, readMeta } from "@/lib/forms/answers";
 import { formSchemaJson, isInputType } from "@/lib/forms/schema";
+import { FileDownloadButton } from "@/components/responses/FileDownloadButton";
+import type { UploadedFile } from "@/lib/forms/files";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Detail respons" };
@@ -79,9 +81,40 @@ export default async function ResponseDetailPage({
                 </li>
               );
             }
-            if (!isInputType(f.type) || f.type === "file") return null;
+            if (!isInputType(f.type)) return null;
             qn += 1;
             const value = answers[f.id];
+
+            if (f.type === "file") {
+              const files = Array.isArray(value) ? (value as UploadedFile[]) : [];
+              return (
+                <li key={f.id} className="nb-panel nb-panel-strong nb-shadow overflow-hidden">
+                  <div className="border-b-[3px] border-line bg-fg px-4 py-3 text-bg">
+                    <p className="nb-mono opacity-80">Pertanyaan {qn}</p>
+                    <p className="mt-1 break-words font-display text-lg font-bold">{f.label || "(tanpa judul)"}</p>
+                  </div>
+                  <div className="p-4">
+                    <p className="nb-mono mb-2">Berkas Terunggah ({files.length})</p>
+                    {files.length === 0 ? (
+                      <div className="border-2 border-dashed border-line px-3 py-3 italic opacity-70">Tidak ada berkas yang diunggah</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {files.map((file) => (
+                          <FileDownloadButton
+                            key={file.storagePath}
+                            formId={id}
+                            storagePath={file.storagePath}
+                            filename={file.originalFilename}
+                            sizeBytes={file.sizeBytes}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </li>
+              );
+            }
+
             const chips = answerChips(f, value);
             const text = formatAnswer(f, value);
             const empty = chips ? chips.length === 0 : text === "";

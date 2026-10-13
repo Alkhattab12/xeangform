@@ -1,4 +1,5 @@
 import { isInputType, type FormField } from "./schema";
+import { uploadedFileSchema, type UploadedFile } from "./files";
 
 /** Penanda opsi "Lainnya" pada jawaban radio/checkbox. */
 export const OTHER = "__other__";
@@ -126,9 +127,29 @@ function checkField(f: FormField, v: unknown): CheckResult {
       if (v === true) return { value: true };
       return f.required ? { error: "Centang persetujuan untuk melanjutkan." } : { value: false };
 
-    case "file":
-      // Unggah file diaktifkan di tahap berikutnya. Kolom wajib tidak boleh lolos tanpa file.
-      return f.required ? { error: "Unggah file belum tersedia di form ini. Hubungi pembuat form." } : { empty: true };
+    case "file": {
+      const list = Array.isArray(v) ? v : v ? [v] : [];
+      if (list.length === 0) {
+        return f.required ? { error: "Unggah file wajib diisi." } : { empty: true };
+      }
+      const maxFiles = f.file?.maxFiles ?? 1;
+      if (list.length > maxFiles) {
+        return { error: `Maksimal ${maxFiles} file yang boleh diunggah.` };
+      }
+      const maxBytes = (f.file?.maxSizeMb ?? 10) * 1024 * 1024;
+      const validFiles: UploadedFile[] = [];
+      for (const item of list) {
+        const parsed = uploadedFileSchema.safeParse(item);
+        if (!parsed.success) {
+          return { error: "Data file tidak valid." };
+        }
+        if (parsed.data.sizeBytes > maxBytes) {
+          return { error: `Ukuran file melebihi batas ${f.file?.maxSizeMb ?? 10} MB.` };
+        }
+        validFiles.push(parsed.data);
+      }
+      return { value: validFiles };
+    }
 
     default:
       return { empty: true };

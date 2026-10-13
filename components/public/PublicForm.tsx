@@ -11,6 +11,8 @@ import { MiniAudioPlayer } from "./MiniAudioPlayer";
 import { playTactileSfx } from "@/lib/audio/engine";
 import type { ThemePreset } from "@/lib/forms/schema";
 import { GateCard } from "./GateCard";
+import { FileUploadField } from "./FileUploadField";
+import type { UploadedFile } from "@/lib/forms/files";
 
 type Props = {
   slug: string;
@@ -435,15 +437,21 @@ export function PublicForm({ slug, title, description, fields, settings, themePr
     }
 
     if (f.type === "file") {
+      const fileVal = Array.isArray(answers[f.id]) ? (answers[f.id] as UploadedFile[]) : [];
       return wrap(
-        <>
+        <div id={id} tabIndex={-1}>
           <p className={lblCls}>{f.label}{reqMark(f)}</p>
           {desc}
-          <div id={id} tabIndex={-1} className="border-2 border-dashed border-line p-4">
-            Kolom unggah file sedang disiapkan dan belum bisa dipakai.
-          </div>
+          <FileUploadField
+            field={f}
+            slug={slug}
+            value={fileVal}
+            onChange={(files) => set(f.id, files)}
+            error={err}
+            disabled={status === "submitting"}
+          />
           {errEl}
-        </>,
+        </div>,
       );
     }
 

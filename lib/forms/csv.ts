@@ -16,7 +16,7 @@ const wib = (iso: string) => new Date(Date.parse(iso) + 7 * 3600 * 1000).toISOSt
 export type CsvOptions = { quiz?: boolean; proctor?: boolean; accounts?: boolean };
 
 export function buildCsv(fields: FormField[], rows: ResponseRow[], opts: CsvOptions = {}): string {
-  const cols = fields.filter((f) => isInputType(f.type) && f.type !== "file");
+  const cols = fields.filter((f) => isInputType(f.type));
 
   // Judul kolom = label; label kembar diberi nomor agar tidak ambigu
   const seen = new Map<string, number>();

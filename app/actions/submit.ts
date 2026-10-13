@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { z } from "zod";
 import { gradeQuiz } from "@/lib/forms/grade";
 import { formSchemaJson, parseSettings } from "@/lib/forms/schema";
+import type { UploadedFile } from "@/lib/forms/files";
 import { validateAnswers } from "@/lib/forms/validate";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { serviceRoleKey } from "@/lib/supabase/env";
@@ -119,12 +120,17 @@ export async function submitResponse(slug: string, input: unknown): Promise<Subm
     if (!settings.allowTabSwitch && payload.data.violations) metadata.violations = payload.data.violations;
     if (respondent) metadata.respondent = { email: respondent.email, name: respondent.name };
 
-    const { error: insErr } = await admin.from("form_submissions").insert({
-      form_id: form.id,
-      answers_json: checked.answers,
-      metadata_json: metadata,
-      respondent_id: respondent?.id ?? null,
-    });
+    const { data: inserted, error: insErr } = await admin
+      .from("form_submissions")
+      .insert({
+        form_id: form.id,
+        answers_json: checked.answers,
+        metadata_json: metadata,
+        respondent_id: respondent?.id ?? null,
+      })
+      .select("id")
+      .single();
+
     if (insErr) {
       if (insErr.code === "23505") {
         // Bentrok unik: kirim ganda (kunci sama) atau akun yang sama sudah mengisi
@@ -140,6 +146,44 @@ export async function submitResponse(slug: string, input: unknown): Promise<Subm
       console.error("submit_failed", insErr.code); // tanpa isi jawaban
       return { ok: false, error: GENERIC };
     }
+
+    // 8) Simpan relasi berkas ke submission_files jika ada berkas yang diunggah
+    if (inserted?.id) {
+      const fileRows: {
+        submission_id: string;
+        field_id: string;
+        storage_path: string;
+        original_filename: string;
+        mime_type: string;
+        size_bytes: number;
+      }[] = [];
+
+      for (const field of schema.data.fields) {
+        if (field.type === "file") {
+          const files = checked.answers[field.id];
+          if (Array.isArray(files)) {
+            for (const file of files as UploadedFile[]) {
+              fileRows.push({
+                submission_id: inserted.id,
+                field_id: field.id,
+                storage_path: file.storagePath,
+                original_filename: file.originalFilename,
+                mime_type: file.mimeType,
+                size_bytes: file.sizeBytes,
+              });
+            }
+          }
+        }
+      }
+
+      if (fileRows.length > 0) {
+        const { error: filesErr } = await admin.from("submission_files").insert(fileRows);
+        if (filesErr) {
+          console.error("submit_files_failed", filesErr.message);
+        }
+      }
+    }
+
     return { ok: true, result: score };
   } catch (e) {
     console.error("submit_exception", e instanceof Error ? e.message : "unknown");
