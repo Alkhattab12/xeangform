@@ -1,5 +1,3 @@
-"use client";
-
 /**
  * Konversi volume persen (0-100) ke skala linier browser (0.0-1.0)
  * Menggunakan kurva kuadratis agar kenaikan volume terasa alami bagi pendengaran manusia.
