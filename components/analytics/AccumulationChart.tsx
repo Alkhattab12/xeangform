@@ -82,10 +82,10 @@ export function AccumulationChart({ name, items, valueLabel, rowLabel, pctLabel 
   const rowH = compact ? 34 : 44;
 
   return (
-    <div>
+    <div className="w-full min-w-0 max-w-full">
       <div role="group" aria-label={`Jenis visualisasi: ${name}`} className="flex flex-wrap gap-2">
         {KINDS.map((k) => (
-          <button key={k.key} type="button" aria-pressed={kind === k.key} onClick={() => set(k.key)} className={`nb-btn min-h-10 px-3 py-2 text-sm ${kind === k.key ? "" : "nb-btn-ghost"}`}>
+          <button key={k.key} type="button" aria-pressed={kind === k.key} onClick={() => set(k.key)} className={`nb-btn min-h-10 px-3 py-2 text-xs sm:text-sm ${kind === k.key ? "" : "nb-btn-ghost"}`}>
             {k.label}
           </button>
         ))}
@@ -96,7 +96,7 @@ export function AccumulationChart({ name, items, valueLabel, rowLabel, pctLabel 
       ) : (
         <>
           {kind !== "tabel" && (
-            <div className="nb-panel nb-panel-strong mt-3 p-3 sm:p-4">
+            <div className="nb-panel nb-panel-strong mt-3 p-3 sm:p-4 w-full min-w-0 max-w-full overflow-hidden">
               <div role="img" aria-label={`Grafik ${label.toLowerCase()}: ${name}. Rincian angka ada pada daftar di bawah grafik.`} style={{ height: kind === "hbar" ? Math.max(compact ? 150 : 200, data.length * rowH + 40) : compact ? 240 : 300 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   {kind === "pie" || kind === "donut" ? (
@@ -151,7 +151,7 @@ export function AccumulationChart({ name, items, valueLabel, rowLabel, pctLabel 
           )}
 
           {kind === "tabel" && (
-            <div className="mt-3">
+            <div className="mt-3 w-full min-w-0 max-w-full">
               <DataTable
                 caption={`Akumulasi: ${name}`}
                 pageSize={compact ? 8 : 15}
@@ -168,7 +168,7 @@ export function AccumulationChart({ name, items, valueLabel, rowLabel, pctLabel 
           )}
         </>
       )}
-      {note && <p className="nb-mono mt-2">{note}</p>}
+      {note && <p className="nb-mono mt-2 break-words">{note}</p>}
     </div>
   );
 }

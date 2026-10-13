@@ -60,7 +60,7 @@ export default async function AnalyticsPage({ params, searchParams }: { params: 
 
   if (!res.ok) {
     return (
-      <main className="mx-auto max-w-6xl px-5 py-10">
+      <main className="mx-auto max-w-6xl px-4 sm:px-5 py-8 sm:py-10 w-full min-w-0 max-w-full">
         {back}
         <h1 className="mt-6 break-words font-display text-[clamp(2rem,6vw,3.5rem)] font-bold">{form.title as string}</h1>
         <div role="alert" className="nb-panel mt-6 border-[3px] bg-orange p-4 font-bold text-ink">{res.error}</div>
@@ -200,7 +200,7 @@ export default async function AnalyticsPage({ params, searchParams }: { params: 
   const fieldCls = "mb-1 block font-display text-sm font-bold";
 
   return (
-    <main className="mx-auto max-w-6xl px-5 py-10">
+    <main className="mx-auto max-w-6xl px-4 sm:px-5 py-8 sm:py-10 w-full min-w-0 max-w-full">
       {back}
       <p className="nb-mono mt-6">Analitik / {form.status === "published" ? "Terbit" : form.status === "archived" ? "Arsip" : "Draft"}</p>
       <h1 className="mt-2 break-words font-display text-[clamp(2rem,6vw,3.5rem)] font-bold">{form.title as string}</h1>
@@ -210,7 +210,7 @@ export default async function AnalyticsPage({ params, searchParams }: { params: 
       </p>
 
       {/* Filter */}
-      <form method="get" action={base} className="nb-panel nb-panel-strong mt-6 grid gap-4 p-4 sm:grid-cols-2 lg:grid-cols-4">
+      <form method="get" action={base} className="nb-panel nb-panel-strong mt-6 grid gap-4 p-4 sm:grid-cols-2 lg:grid-cols-4 w-full min-w-0 max-w-full">
         {filters.soal && <input type="hidden" name="soal" value={filters.soal} />}
         <div>
           <label htmlFor="from" className={fieldCls}>Dari tanggal</label>
@@ -399,10 +399,10 @@ export default async function AnalyticsPage({ params, searchParams }: { params: 
         </p>
       )}
 
-      <section aria-labelledby="sec-akumulasi-form" className="mt-12">
+      <section aria-labelledby="sec-akumulasi-form" className="mt-12 w-full min-w-0 max-w-full">
         <h2 id="sec-akumulasi-form" className="font-display text-3xl font-bold">Akumulasi respons semua kuis</h2>
         <p className="mt-1 text-sm opacity-80">Jumlah respons tersimpan di setiap form/kuis milikmu ({fmtInt(formTotal)} total, tanpa filter di atas). Persentase = respons form ÷ total semua form.</p>
-        <div className="mt-4">
+        <div className="mt-4 w-full min-w-0 max-w-full">
           <AccumulationChart
             name="respons per kuis"
             items={formItems}
@@ -453,12 +453,12 @@ export default async function AnalyticsPage({ params, searchParams }: { params: 
       />
 
       {/* Individual */}
-      <section aria-labelledby="sec-peserta" className="mt-12">
+      <section aria-labelledby="sec-peserta" className="mt-12 w-full min-w-0 max-w-full">
         <h2 id="sec-peserta" className="font-display text-3xl font-bold">Hasil per pengerjaan</h2>
         <p className="mt-1 text-sm opacity-80">
           Setiap baris adalah satu pengerjaan. Peserta yang mengulang muncul beberapa kali (kolom “Ke-”); gunakan filter “Percobaan” agar rata-rata tidak bercampur. Menampilkan hingga 500 pengerjaan terbaru dalam filter.
         </p>
-        <div className="mt-3">
+        <div className="mt-3 w-full min-w-0 max-w-full">
           <DataTable
             caption="Daftar pengerjaan"
             pageSize={10}

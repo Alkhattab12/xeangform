@@ -57,7 +57,7 @@ export default async function ResponsesPage({
   };
 
   return (
-    <main className="mx-auto max-w-6xl px-5 py-10">
+    <main className="mx-auto max-w-6xl px-4 sm:px-5 py-8 sm:py-10 w-full min-w-0 max-w-full">
       <nav aria-label="Navigasi halaman" className="nb-mono flex flex-wrap gap-4">
         <Link href="/dashboard" className="underline underline-offset-4">← Dashboard</Link>
         <Link href={`/dashboard/forms/${id}`} className="underline underline-offset-4">Editor form</Link>
@@ -69,7 +69,7 @@ export default async function ResponsesPage({
       {notice && <div role="status" className="nb-panel mt-6 border-[3px] bg-accent p-3 font-bold text-ink">{notice}</div>}
       {errorMsg && <div role="alert" className="nb-panel mt-6 border-[3px] bg-orange p-3 font-bold text-ink">{errorMsg}</div>}
 
-      <form method="get" className="nb-panel nb-panel-strong mt-6 grid gap-4 p-4 sm:grid-cols-2 lg:grid-cols-5">
+      <form method="get" className="nb-panel nb-panel-strong mt-6 grid gap-4 p-4 sm:grid-cols-2 lg:grid-cols-5 w-full min-w-0 max-w-full">
         <div className="lg:col-span-2">
           <label htmlFor="q" className="mb-1 block font-display text-sm font-bold">Cari jawaban</label>
           <input id="q" name="q" type="search" defaultValue={filters.q} className="nb-input" maxLength={100} />
@@ -134,7 +134,7 @@ export default async function ResponsesPage({
                 </form>
               </div>
 
-              <ul className="mt-4 space-y-3">
+              <ul className="mt-4 space-y-3 w-full min-w-0 max-w-full">
                 {rows.map((r) => {
                   const preview = inputs
                     .map((f) => ({ f, text: formatAnswer(f, r.answers[f.id]) }))
@@ -142,15 +142,15 @@ export default async function ResponsesPage({
                     .slice(0, 3);
                   const when = fmt.format(new Date(r.submitted_at));
                   return (
-                    <li key={r.id} className="nb-panel nb-panel-strong nb-shadow flex items-start gap-3 p-4">
+                    <li key={r.id} className="nb-panel nb-panel-strong nb-shadow flex items-start gap-3 p-4 min-w-0 max-w-full">
                       <input type="checkbox" form="bulk" name="ids" value={r.id} aria-label={`Pilih respons ${when}`} className="mt-1 h-5 w-5 shrink-0 accent-[#3457ff]" />
                       <Link href={`${base}/${r.id}${qs ? `?${qs}` : ""}`} className="min-w-0 flex-1">
-                        <span className="nb-mono block">
+                        <span className="nb-mono block break-words">
                           {when}
                           {r.meta.score ? ` · Benar ${r.meta.score.correct}/${r.meta.score.total}` : ""}
                           {r.meta.violations ? ` · Pindah tab ${r.meta.violations}×` : ""}
                         </span>
-                        {r.meta.respondent?.email && <span className="nb-mono block">{r.meta.respondent.email}</span>}
+                        {r.meta.respondent?.email && <span className="nb-mono block break-words">{r.meta.respondent.email}</span>}
                         {preview.length === 0 ? (
                           <span className="mt-1 block opacity-70">(tidak ada jawaban yang terisi)</span>
                         ) : (

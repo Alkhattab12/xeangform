@@ -28,14 +28,14 @@ export function ScoreSection({ classes, histogram, trend, trendFilled, interval,
   const trendData = trend.map((t) => ({ ...t }));
 
   return (
-    <section aria-labelledby="sec-nilai" className="mt-12">
+    <section aria-labelledby="sec-nilai" className="mt-12 w-full min-w-0 max-w-full">
       <h2 id="sec-nilai" className="font-display text-3xl font-bold">Rata-rata nilai</h2>
       <p className="mt-1 text-sm opacity-80">
         Nilai = jawaban benar ÷ jumlah soal berkunci × 100 per pengerjaan; semua kelompok memakai metode yang sama. {fmtInt(scoredCount)} pengerjaan bernilai masuk perhitungan.
       </p>
 
-      <div className="mt-4 grid gap-6 lg:grid-cols-2">
-        <div className="nb-panel nb-panel-strong p-4">
+      <div className="mt-4 grid gap-6 lg:grid-cols-2 min-w-0 w-full">
+        <div className="nb-panel nb-panel-strong p-4 min-w-0 max-w-full overflow-hidden">
           <h3 className="font-display text-xl font-bold">Rata-rata per {groupLabel.toLowerCase()}</h3>
           {avgData.length === 0 ? (
             <p className="mt-3 font-bold">Belum ada data.</p>
@@ -75,7 +75,7 @@ export function ScoreSection({ classes, histogram, trend, trendFilled, interval,
           )}
         </div>
 
-        <div className="nb-panel nb-panel-strong p-4">
+        <div className="nb-panel nb-panel-strong p-4 min-w-0 max-w-full overflow-hidden">
           <h3 className="font-display text-xl font-bold">Distribusi nilai</h3>
           <div role="img" aria-label="Histogram jumlah pengerjaan per rentang nilai. Angka lengkap ada pada daftar di bawah grafik." className="mt-3" style={{ height: 240 }}>
             <ResponsiveContainer width="100%" height="100%">
@@ -108,11 +108,11 @@ export function ScoreSection({ classes, histogram, trend, trendFilled, interval,
               </li>
             ))}
           </ul>
-          <p className="nb-mono mt-2">Rentang bisa diubah lewat parameter “bins” (mis. 0,60,75,90,100).</p>
+          <p className="nb-mono mt-2 break-words">Rentang bisa diubah lewat parameter “bins” (mis. 0,60,75,90,100).</p>
         </div>
       </div>
 
-      <div className="nb-panel nb-panel-strong mt-6 p-4">
+      <div className="nb-panel nb-panel-strong mt-6 p-4 min-w-0 max-w-full overflow-hidden">
         <h3 className="font-display text-xl font-bold">Tren rata-rata nilai per {interval}</h3>
         {trendData.length === 0 ? (
           <p className="mt-3 font-bold">Belum ada data bernilai pada rentang ini.</p>
@@ -142,14 +142,14 @@ export function ScoreSection({ classes, histogram, trend, trendFilled, interval,
                 </LineChart>
               </ResponsiveContainer>
             </div>
-            <p className="nb-mono mt-2">
+            <p className="nb-mono mt-2 break-words">
               Garis putus-putus = nilai kelulusan ({pass}).{trendFilled ? " Periode tanpa pengerjaan dibiarkan kosong (garis terputus), bukan dianggap 0." : " Terlalu banyak periode, hanya periode yang punya data yang ditampilkan."}
             </p>
           </>
         )}
       </div>
 
-      <div className="mt-6">
+      <div className="mt-6 w-full min-w-0 max-w-full">
         <h3 className="mb-2 font-display text-xl font-bold">Rincian per {groupLabel.toLowerCase()}</h3>
         <DataTable
           caption={`Rata-rata nilai per ${groupLabel.toLowerCase()}`}

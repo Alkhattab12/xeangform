@@ -74,12 +74,17 @@
 /* ================= Base ================= */
 html {
   background: var(--bg);
+  overflow-x: clip;
+  max-width: 100%;
 }
 body {
   background: var(--bg);
   color: var(--fg);
   font-family: var(--ff-body);
   -webkit-font-smoothing: antialiased;
+  overflow-x: clip;
+  max-width: 100%;
+  min-width: 0;
 }
 h1, h2, h3, h4 {
   font-family: var(--ff-display);
@@ -179,12 +184,92 @@ h1, h2, h3, h4 {
 }
 }
 
+/* ================= Lonceng Notifikasi & Bubble Press Effect ================= */
+.nb-bell-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: var(--bw) solid var(--line);
+  background: var(--surface);
+  color: var(--fg);
+  border-radius: var(--radius);
+  box-shadow: 2px 2px 0 var(--shadow-color);
+  cursor: pointer;
+  outline: none;
+  touch-action: manipulation;
+  transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.18s ease, background-color 0.15s ease;
+  user-select: none;
+}
+
+.nb-bell-btn:hover {
+  background: var(--paper);
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 var(--shadow-color);
+}
+
+.nb-bell-btn:active,
+.nb-bell-btn.is-pressing {
+  transform: scale(0.88) translate(2px, 2px);
+  box-shadow: 0 0 0 var(--shadow-color);
+}
+
+.nb-bubble-ring {
+  position: absolute;
+  inset: -6px;
+  border-radius: inherit;
+  border: 2px solid var(--cobalt);
+  background: color-mix(in srgb, var(--cobalt) 18%, transparent);
+  pointer-events: none;
+  animation: nb-bubble-pop 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes nb-bubble-pop {
+  0% {
+    transform: scale(0.65);
+    opacity: 0.95;
+  }
+  60% {
+    transform: scale(1.18);
+    opacity: 0.4;
+  }
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+
+.nb-badge-pop {
+  animation: nb-badge-bounce 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes nb-badge-bounce {
+  0% {
+    transform: scale(0.3);
+  }
+  70% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
 /* ================= Maskot loading (Puck: sprite diputar lewat JS; .m-bob hanya untuk gambar kustom) ================= */
 .m-bob { animation: m-bob 1.4s ease-in-out infinite; }
 @keyframes m-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
 
 @media (prefers-reduced-motion: reduce) {
   .m-bob { animation: none !important; }
+  .nb-bell-btn { transition: none !important; }
+  .nb-bell-btn:active, .nb-bell-btn.is-pressing { transform: none !important; }
+  .nb-bubble-ring { display: none !important; }
+  .nb-badge-pop { animation: none !important; }
   *, *::before, *::after {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;

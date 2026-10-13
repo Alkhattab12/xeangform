@@ -49,13 +49,13 @@ export function QuestionSection({ rows, detail, groupLabel, prevHref, nextHref, 
   const classOptions = detail ? detail.options.filter((o) => o.count > 0 || detail.byClass.some((c) => (c.counts[o.id] ?? 0) > 0)) : [];
 
   return (
-    <section aria-labelledby="sec-soal" className="mt-12">
+    <section aria-labelledby="sec-soal" className="mt-12 w-full min-w-0 max-w-full">
       <h2 id="sec-soal" className="font-display text-3xl font-bold">Analisis jawaban per soal</h2>
       <p className="mt-1 text-sm opacity-80">
         Tingkat kesulitan memakai persentase peserta yang menjawab benar pada data yang diamati; ini bukan ukuran mutlak kualitas soal. Ambang batas bisa diubah di filter.
       </p>
 
-      <div id="detail-soal" className="nb-panel nb-panel-strong mt-4 scroll-mt-6 p-4 sm:p-5">
+      <div id="detail-soal" className="nb-panel nb-panel-strong mt-4 scroll-mt-6 p-4 sm:p-5 min-w-0 max-w-full overflow-hidden">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="min-w-0 flex-1">{selector}</div>
           <div className="flex gap-2">
@@ -88,7 +88,7 @@ export function QuestionSection({ rows, detail, groupLabel, prevHref, nextHref, 
                 </dl>
                 {d.limited && <p className="nb-panel mt-3 bg-lavender p-3 text-sm font-bold text-ink">Sampel terbatas ({d.respondents} peserta). Jangan menarik kesimpulan kuat dari angka ini.</p>}
 
-                <div className="mt-5">
+                <div className="mt-5 w-full min-w-0 max-w-full">
                   <h4 className="font-display text-lg font-bold">Akumulasi jawaban soal ini</h4>
                   <p className="nb-mono mt-1 mb-2">
                     Persentase dihitung dari {fmtInt(d.respondents)} peserta{d.type === "checkbox" ? " (pilihan ganda: total bisa melebihi 100%)" : ""}. ✓ benar · ✗ salah.
@@ -113,7 +113,7 @@ export function QuestionSection({ rows, detail, groupLabel, prevHref, nextHref, 
                 )}
 
                 {detail.byClass.length > 0 && groupLabel && (d.keyed || classOptions.length > 0) && (
-                  <div className="mt-6">
+                  <div className="mt-6 w-full min-w-0 max-w-full">
                     <h4 className="font-display text-lg font-bold">Perbandingan antar {groupLabel.toLowerCase()}</h4>
                     <p className="nb-mono mt-1">Persentase dihitung dari peserta di tiap kelompok yang menjawab soal ini, bukan dari seluruh peserta. Kelompok kecil (n &lt; 5) kurang andal.</p>
                     {d.keyed ? (
@@ -144,7 +144,7 @@ export function QuestionSection({ rows, detail, groupLabel, prevHref, nextHref, 
                         </ResponsiveContainer>
                       </div>
                     ) : null}
-                    <div className="mt-3">
+                    <div className="mt-3 w-full min-w-0 max-w-full">
                       <DataTable
                         caption={`Perbandingan soal ${d.no} antar ${groupLabel.toLowerCase()}`}
                         pageSize={10}
@@ -171,34 +171,36 @@ export function QuestionSection({ rows, detail, groupLabel, prevHref, nextHref, 
         )}
       </div>
 
-      <h3 className="mb-2 mt-8 font-display text-2xl font-bold">Tabel analitik semua soal</h3>
-      <DataTable
-        caption="Ringkasan statistik setiap soal"
-        pageSize={10}
-        searchKeys={["no", "label"]}
-        searchLabel="Cari nomor atau teks soal"
-        defaultSort={{ key: "no", dir: "asc" }}
-        chips={[
-          { label: `Akurasi rendah (< ${hard}%)`, flag: "low" },
-          { label: "Banyak tidak menjawab (≥ 20%)", flag: "blankHigh" },
-          { label: "Perlu ditinjau", flag: "review" },
-        ]}
-        columns={[
-          { key: "no", label: "No", kind: "int", align: "right" },
-          { key: "label", label: "Ringkasan soal" },
-          { key: "respondents", label: "Peserta", kind: "int", align: "right" },
-          { key: "answered", label: "Menjawab", kind: "int", align: "right" },
-          { key: "blank", label: "Tidak menjawab", kind: "int", align: "right" },
-          { key: "correct", label: "Benar", kind: "int", align: "right" },
-          { key: "wrong", label: "Salah", kind: "int", align: "right" },
-          { key: "pctCorrect", label: "Akurasi", kind: "pct", align: "right" },
-          { key: "top", label: "Opsi terbanyak" },
-          { key: "difficulty", label: "Indikator", kind: "badge" },
-          { key: "href", label: "Detail", kind: "link", linkLabel: "Lihat detail" },
-        ]}
-        rows={rows}
-        empty="Form ini belum punya soal."
-      />
+      <div className="mt-8 w-full min-w-0 max-w-full">
+        <h3 className="mb-2 font-display text-2xl font-bold">Tabel analitik semua soal</h3>
+        <DataTable
+          caption="Ringkasan statistik setiap soal"
+          pageSize={10}
+          searchKeys={["no", "label"]}
+          searchLabel="Cari nomor atau teks soal"
+          defaultSort={{ key: "no", dir: "asc" }}
+          chips={[
+            { label: `Akurasi rendah (< ${hard}%)`, flag: "low" },
+            { label: "Banyak tidak menjawab (≥ 20%)", flag: "blankHigh" },
+            { label: "Perlu ditinjau", flag: "review" },
+          ]}
+          columns={[
+            { key: "no", label: "No", kind: "int", align: "right" },
+            { key: "label", label: "Ringkasan soal" },
+            { key: "respondents", label: "Peserta", kind: "int", align: "right" },
+            { key: "answered", label: "Menjawab", kind: "int", align: "right" },
+            { key: "blank", label: "Tidak menjawab", kind: "int", align: "right" },
+            { key: "correct", label: "Benar", kind: "int", align: "right" },
+            { key: "wrong", label: "Salah", kind: "int", align: "right" },
+            { key: "pctCorrect", label: "Akurasi", kind: "pct", align: "right" },
+            { key: "top", label: "Opsi terbanyak" },
+            { key: "difficulty", label: "Indikator", kind: "badge" },
+            { key: "href", label: "Detail", kind: "link", linkLabel: "Lihat detail" },
+          ]}
+          rows={rows}
+          empty="Form ini belum punya soal."
+        />
+      </div>
     </section>
   );
 }

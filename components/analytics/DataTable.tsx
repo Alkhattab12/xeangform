@@ -85,43 +85,61 @@ export function DataTable({ caption, columns, rows, searchKeys = [], searchLabel
     }
   };
 
+  const tableMinWidth =
+    columns.length <= 3
+      ? "min-w-full"
+      : columns.length <= 5
+        ? "min-w-[28rem] sm:min-w-full"
+        : "min-w-[38rem] sm:min-w-[42rem]";
+
   return (
-    <div>
+    <div className="w-full min-w-0 max-w-full">
       {(searchKeys.length > 0 || chips.length > 0) && (
-        <div className="mb-3 flex flex-wrap items-end gap-3">
+        <div className="mb-3 flex flex-wrap items-end gap-2 sm:gap-3">
           {searchKeys.length > 0 && (
-            <div className="min-w-[12rem] flex-1">
+            <div className="min-w-0 w-full sm:w-auto sm:min-w-[12rem] flex-1">
               <label className="mb-1 block font-display text-sm font-bold">
                 {searchLabel}
-                <input type="search" value={input} onChange={(e) => setInput(e.target.value)} maxLength={100} className="nb-input mt-1 font-normal" />
+                <input type="search" value={input} onChange={(e) => setInput(e.target.value)} maxLength={100} className="nb-input mt-1 font-normal w-full" />
               </label>
             </div>
           )}
-          {chips.map((c) => {
-            const on = active.includes(c.flag);
-            return (
-              <button
-                key={c.flag}
-                type="button"
-                aria-pressed={on}
-                onClick={() => setActive((a) => (on ? a.filter((x) => x !== c.flag) : [...a, c.flag]))}
-                className={`nb-btn min-h-10 px-3 py-2 text-sm ${on ? "" : "nb-btn-ghost"}`}
-              >
-                {on ? "✓ " : ""}
-                {c.label}
-              </button>
-            );
-          })}
+          {chips.length > 0 && (
+            <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+              {chips.map((c) => {
+                const on = active.includes(c.flag);
+                return (
+                  <button
+                    key={c.flag}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => setActive((a) => (on ? a.filter((x) => x !== c.flag) : [...a, c.flag]))}
+                    className={`nb-btn min-h-10 px-3 py-2 text-xs sm:text-sm ${on ? "" : "nb-btn-ghost"}`}
+                  >
+                    {on ? "✓ " : ""}
+                    {c.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
-      <p className="nb-mono mb-2" aria-live="polite">
-        {view.length} baris{view.length !== rows.length ? ` dari ${rows.length}` : ""}
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <p className="nb-mono" aria-live="polite">
+          {view.length} baris{view.length !== rows.length ? ` dari ${rows.length}` : ""}
+        </p>
+        {columns.length > 3 && (
+          <span className="nb-mono text-[10px] opacity-75 sm:hidden">
+            ← Geser tabel ke samping →
+          </span>
+        )}
+      </div>
       {view.length === 0 ? (
         <p className="nb-panel p-4 font-bold">{rows.length === 0 ? empty : "Tidak ada baris yang cocok dengan pencarian atau filter tabel."}</p>
       ) : (
-        <div className="overflow-x-auto border-2 border-line" role="region" aria-label={caption} tabIndex={0}>
-          <table className="w-full min-w-[40rem] border-collapse text-left text-sm">
+        <div className="w-full max-w-full min-w-0 overflow-x-auto border-2 border-line focus:outline-none [webkit-overflow-scrolling:touch]" role="region" aria-label={caption} tabIndex={0}>
+          <table className={`w-full border-collapse text-left text-sm ${tableMinWidth}`}>
             <caption className="sr-only">{caption}</caption>
             <thead className="bg-accent text-ink">
               <tr>

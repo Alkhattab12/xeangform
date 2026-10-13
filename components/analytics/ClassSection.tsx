@@ -40,7 +40,7 @@ export function ClassSection({ classes, groupLabel, total }: { classes: ClassRow
   const anim = { isAnimationActive: !reduced, animationDuration: 450 };
 
   return (
-    <section aria-labelledby="sec-kelas" className="mt-12">
+    <section aria-labelledby="sec-kelas" className="mt-12 w-full min-w-0 max-w-full">
       <h2 id="sec-kelas" className="font-display text-3xl font-bold">Akumulasi respons per {groupLabel.toLowerCase()}</h2>
       <p className="mt-1 text-sm opacity-80">
         Persentase = respons kelompok ÷ total respons dalam filter aktif ({fmtInt(total)}). Jumlah respons bukan ukuran prestasi.
@@ -52,14 +52,14 @@ export function ClassSection({ classes, groupLabel, total }: { classes: ClassRow
         <>
           <div role="group" aria-label="Jenis visualisasi" className="mt-4 flex flex-wrap gap-2">
             {KINDS.map((k) => (
-              <button key={k.key} type="button" aria-pressed={kind === k.key} onClick={() => setKind(k.key)} className={`nb-btn min-h-10 px-3 py-2 text-sm ${kind === k.key ? "" : "nb-btn-ghost"}`}>
+              <button key={k.key} type="button" aria-pressed={kind === k.key} onClick={() => setKind(k.key)} className={`nb-btn min-h-10 px-3 py-2 text-xs sm:text-sm ${kind === k.key ? "" : "nb-btn-ghost"}`}>
                 {k.label}
               </button>
             ))}
           </div>
 
           {kind !== "tabel" && (
-            <div className="nb-panel nb-panel-strong mt-4 p-4">
+            <div className="nb-panel nb-panel-strong mt-4 p-4 min-w-0 max-w-full overflow-hidden">
               <div role="img" aria-label={`Grafik ${KINDS.find((k) => k.key === kind)?.label} distribusi respons per kelompok. Rincian ada pada daftar di bawahnya.`} style={{ height: kind === "hbar" ? Math.max(220, data.length * 44 + 40) : 300 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   {kind === "pie" || kind === "donut" ? (
@@ -111,7 +111,7 @@ export function ClassSection({ classes, groupLabel, total }: { classes: ClassRow
             </div>
           )}
 
-          <div className={kind === "tabel" ? "mt-4" : "mt-6"}>
+          <div className={`w-full min-w-0 max-w-full ${kind === "tabel" ? "mt-4" : "mt-6"}`}>
             <DataTable
               caption={`Distribusi respons per ${groupLabel.toLowerCase()}`}
               pageSize={15}
@@ -125,7 +125,7 @@ export function ClassSection({ classes, groupLabel, total }: { classes: ClassRow
               ]}
               rows={rows}
             />
-            <p className="nb-mono mt-2">*Peserta unik hanya dihitung dari respons yang punya akun; respons anonim tidak bisa dibedakan.</p>
+            <p className="nb-mono mt-2 break-words">*Peserta unik hanya dihitung dari respons yang punya akun; respons anonim tidak bisa dibedakan.</p>
           </div>
         </>
       )}

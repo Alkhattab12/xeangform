@@ -24,7 +24,7 @@ export function QuizAccumulation({ dimensions, total }: { dimensions: Dimension[
   const dim = dimensions.find((d) => d.key === active) ?? dimensions[0];
 
   return (
-    <section aria-labelledby="sec-akumulasi" className="mt-12">
+    <section aria-labelledby="sec-akumulasi" className="mt-12 w-full min-w-0 max-w-full">
       <h2 id="sec-akumulasi" className="font-display text-3xl font-bold">Akumulasi respons kuis</h2>
       <p className="mt-1 text-sm opacity-80">
         {total.toLocaleString("id-ID")} respons dalam filter aktif. Pilih dimensi; persentase = jumlah ÷ total respons pada dimensi itu. Jumlah respons bukan ukuran prestasi.
@@ -40,7 +40,7 @@ export function QuizAccumulation({ dimensions, total }: { dimensions: Dimension[
               </button>
             ))}
           </div>
-          <div role="tabpanel" className="mt-4" key={dim.key}>
+          <div role="tabpanel" className="mt-4 w-full min-w-0 max-w-full" key={dim.key}>
             <AccumulationChart name={`respons ${dim.label.toLowerCase()}`} items={dim.items} valueLabel={dim.valueLabel} rowLabel={dim.rowLabel} pctLabel={dim.pctLabel} extraColumns={dim.extraColumns} note={dim.note} />
           </div>
         </>

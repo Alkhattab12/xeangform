@@ -40,7 +40,7 @@ export function QuestionAccumulation({ questions }: { questions: QuestionAcc[] }
   const slice = view.slice((cur - 1) * PER_PAGE, cur * PER_PAGE);
 
   return (
-    <section aria-labelledby="sec-akumulasi-soal" className="mt-12">
+    <section aria-labelledby="sec-akumulasi-soal" className="mt-12 w-full min-w-0 max-w-full">
       <h2 id="sec-akumulasi-soal" className="font-display text-3xl font-bold">Akumulasi respons setiap soal</h2>
       <p className="mt-1 text-sm opacity-80">
         Persentase = jumlah ÷ peserta ({fmtInt(questions[0]?.respondents ?? 0)}). ✓ jawaban benar, ✗ jawaban salah. Pada soal pilihan ganda satu peserta bisa memilih beberapa opsi, sehingga total persentase bisa melebihi 100%.
@@ -50,7 +50,7 @@ export function QuestionAccumulation({ questions }: { questions: QuestionAcc[] }
         <p className="nb-panel nb-panel-strong mt-4 p-6 font-bold">Form ini belum punya soal.</p>
       ) : (
         <>
-          <div className="mt-4 flex flex-wrap items-end gap-4">
+          <div className="mt-4 flex flex-wrap items-end gap-3 sm:gap-4">
             <div>
               <p className="mb-1 font-display text-sm font-bold">Tampilan semua soal</p>
               <div role="group" aria-label="Jenis visualisasi untuk semua soal" className="flex flex-wrap gap-2">
@@ -63,17 +63,17 @@ export function QuestionAccumulation({ questions }: { questions: QuestionAcc[] }
                       setGlobalKind(k.key);
                       setOverrides({});
                     }}
-                    className={`nb-btn min-h-10 px-3 py-2 text-sm ${globalKind === k.key ? "" : "nb-btn-ghost"}`}
+                    className={`nb-btn min-h-10 px-3 py-2 text-xs sm:text-sm ${globalKind === k.key ? "" : "nb-btn-ghost"}`}
                   >
                     {k.label}
                   </button>
                 ))}
               </div>
             </div>
-            <div className="min-w-[12rem] flex-1">
+            <div className="min-w-0 w-full sm:w-auto sm:min-w-[12rem] flex-1">
               <label className="mb-1 block font-display text-sm font-bold">
                 Cari nomor atau teks soal
-                <input type="search" value={input} onChange={(e) => setInput(e.target.value)} maxLength={100} className="nb-input mt-1 font-normal" />
+                <input type="search" value={input} onChange={(e) => setInput(e.target.value)} maxLength={100} className="nb-input mt-1 font-normal w-full" />
               </label>
             </div>
           </div>
@@ -84,16 +84,16 @@ export function QuestionAccumulation({ questions }: { questions: QuestionAcc[] }
           {view.length === 0 ? (
             <p className="nb-panel mt-3 p-4 font-bold">Tidak ada soal yang cocok dengan pencarian.</p>
           ) : (
-            <div className="mt-3 grid gap-6 lg:grid-cols-2">
+            <div className="mt-3 grid gap-6 lg:grid-cols-2 min-w-0 w-full">
               {slice.map((x) => (
-                <article key={x.id} className="nb-panel nb-panel-strong p-4" aria-labelledby={`aq-${x.id}`}>
+                <article key={x.id} className="nb-panel nb-panel-strong p-4 min-w-0 max-w-full overflow-hidden" aria-labelledby={`aq-${x.id}`}>
                   <p className="nb-mono">
                     Soal {x.no} · {FIELD_META[x.type as FieldType]?.label ?? x.type}
                     {x.keyed ? " · Berkunci" : ""}
                   </p>
                   <h3 id={`aq-${x.id}`} className="mt-1 break-words font-display text-lg font-bold">{x.label}</h3>
                   <p className="mt-1 text-sm">{fmtInt(x.answered)} dari {fmtInt(x.respondents)} peserta menjawab</p>
-                  <div className="mt-3">
+                  <div className="mt-3 w-full min-w-0 max-w-full">
                     <AccumulationChart
                       name={`jawaban soal ${x.no}`}
                       items={x.items}

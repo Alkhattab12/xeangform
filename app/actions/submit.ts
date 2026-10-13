@@ -10,6 +10,7 @@ import { validateAnswers } from "@/lib/forms/validate";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { serviceRoleKey } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
+import { createNotification } from "@/app/actions/notifications";
 
 export type QuizResult = { correct: number; total: number };
 export type SubmitResult =
@@ -50,7 +51,7 @@ export async function submitResponse(slug: string, input: unknown): Promise<Subm
     // 1) Form harus ada & terbit
     const { data: form, error: formErr } = await admin
       .from("forms")
-      .select("id,status,schema_json,settings_json")
+      .select("id,owner_id,title,status,schema_json,settings_json")
       .eq("slug", slug)
       .maybeSingle();
     if (formErr) return { ok: false, error: GENERIC };
@@ -181,6 +182,25 @@ export async function submitResponse(slug: string, input: unknown): Promise<Subm
         if (filesErr) {
           console.error("submit_files_failed", filesErr.message);
         }
+      }
+
+      // 9) Buat notifikasi respons formulir baru untuk pemilik formulir
+      try {
+        const respondentLabel = respondent?.name || respondent?.email || "Responden anonim";
+        await createNotification({
+          userId: form.owner_id,
+          type: "form_response",
+          title: "Respons Baru Diterima",
+          message: `Terdapat respons baru dari ${respondentLabel} pada formulir "${form.title || "Formulir"}".`,
+          link: `/dashboard/forms/${form.id}/responses`,
+          metadata: {
+            formId: form.id,
+            submissionId: inserted.id,
+            hasFiles: fileRows.length > 0,
+          },
+        });
+      } catch (notifErr) {
+        console.error("submit_notification_failed", notifErr);
       }
     }
 

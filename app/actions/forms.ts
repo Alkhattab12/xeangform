@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { customAlphabet } from "nanoid";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { createNotification } from "@/app/actions/notifications";
 import { formSchemaJson, formSettingsSchema, formThemeSchema, parseSettings, publishIssues, type FormStatus } from "@/lib/forms/schema";
 
 const makeSlug = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 10);
@@ -85,14 +86,16 @@ export async function setFormStatus(id: string, status: FormStatus): Promise<Sta
   const { supabase, user } = await requireUser();
   if (!user) return { ok: false, error: "Sesi berakhir. Muat ulang halaman lalu masuk kembali." };
 
+  let formTitle = "Formulir";
   if (status === "published") {
     const { data: row, error: e1 } = await supabase
       .from("forms")
-      .select("schema_json,settings_json")
+      .select("title,schema_json,settings_json")
       .eq("id", id)
       .eq("owner_id", user.id)
       .maybeSingle();
     if (e1 || !row) return { ok: false, error: "Form tidak ditemukan." };
+    formTitle = row.title || "Formulir";
     const parsed = formSchemaJson.safeParse(row.schema_json);
     if (!parsed.success) return { ok: false, error: "Struktur form rusak. Buka editor lalu simpan ulang." };
     const issues = publishIssues(parsed.data.fields, parseSettings(row.settings_json));
@@ -114,6 +117,22 @@ export async function setFormStatus(id: string, status: FormStatus): Promise<Sta
     .maybeSingle();
   if (error) return { ok: false, error: "Gagal mengubah status. Coba lagi." };
   if (!data) return { ok: false, error: "Form tidak ditemukan atau bukan milikmu." };
+
+  if (status === "published") {
+    try {
+      await createNotification({
+        userId: user.id,
+        type: "system",
+        title: "Formulir Berhasil Diterbitkan",
+        message: `Formulir "${formTitle}" kini telah dipublikasikan dan siap menerima respons dari publik.`,
+        link: `/dashboard/forms/${id}`,
+        metadata: { formId: id },
+      });
+    } catch (notifErr) {
+      console.error("publish_notification_failed", notifErr);
+    }
+  }
+
   return { ok: true, status };
 }
 

@@ -46,7 +46,7 @@ export default async function ResponseDetailPage({
   const when = new Intl.DateTimeFormat("id-ID", { dateStyle: "full", timeStyle: "medium", timeZone: "Asia/Jakarta" }).format(new Date(subRes.data.submitted_at as string));
 
   return (
-    <main className="mx-auto max-w-3xl px-5 py-10">
+    <main className="mx-auto max-w-3xl px-4 sm:px-5 py-8 sm:py-10 w-full min-w-0 max-w-full">
       <Link href={back} className="nb-mono underline underline-offset-4">← Semua respons</Link>
       <p className="nb-mono mt-6">{formRes.data.title as string}</p>
       <h1 className="mt-2 font-display text-[clamp(1.75rem,5vw,3rem)] font-bold">Detail respons</h1>
