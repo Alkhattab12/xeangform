@@ -86,12 +86,34 @@ export async function uploadAudioTrackAction(formData: FormData): Promise<AudioU
       const buffer = Buffer.from(arrayBuffer);
       const mimeType = file.type || `audio/${format}`;
 
-      const { data: uploadData, error: uploadErr } = await admin.storage
+      let { data: uploadData, error: uploadErr } = await admin.storage
         .from("form-audio")
         .upload(storagePath, buffer, {
           contentType: mimeType,
           upsert: false,
         });
+
+      // Self-healing: jika bucket belum ada, buat otomatis saat upload pertama
+      if (
+        uploadErr &&
+        (uploadErr.message?.toLowerCase().includes("bucket not found") ||
+          uploadErr.message?.toLowerCase().includes("not found") ||
+          (uploadErr as { statusCode?: string }).statusCode === "404")
+      ) {
+        await admin.storage.createBucket("form-audio", {
+          public: true,
+          fileSizeLimit: MAX_AUDIO_SIZE_BYTES,
+          allowedMimeTypes: ["audio/mpeg", "audio/wav", "audio/ogg", "audio/mp4", "audio/x-m4a", "audio/aac"],
+        });
+
+        const retry = await admin.storage
+          .from("form-audio")
+          .upload(storagePath, buffer, {
+            contentType: mimeType,
+            upsert: false,
+          });
+        uploadErr = retry.error;
+      }
 
       if (uploadErr) {
         console.error("Supabase Storage upload error:", uploadErr);
