@@ -31,6 +31,8 @@ import { FieldPreview } from "./FieldPreview";
 import { FieldSettings } from "./FieldSettings";
 import { FormSettingsPanel } from "./FormSettingsPanel";
 import { ThemePanel } from "./ThemePanel";
+import { AudioSettingsPanel } from "./AudioSettingsPanel";
+import { DEFAULT_AUDIO_SETTINGS } from "@/lib/forms/schema";
 
 type Initial = { id: string; title: string; description: string; slug: string; status: FormStatus; fields: FormField[]; settings: FormSettings; theme: FormTheme | null };
 type SaveState = "saved" | "dirty" | "saving" | "error";
@@ -133,7 +135,7 @@ export function FormEditor({ initial }: { initial: Initial }) {
   const [fields, setFields] = useState<FormField[]>(initial.fields);
   const [settings, setSettings] = useState<FormSettings>(initial.settings);
   const [theme, setTheme] = useState<FormTheme | null>(initial.theme);
-  const [asideTab, setAsideTab] = useState<"form" | "theme">("form");
+  const [asideTab, setAsideTab] = useState<"form" | "theme" | "audio">("form");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [status, setStatus] = useState<FormStatus>(initial.status);
   const [save, setSave] = useState<SaveState>("saved");
@@ -509,11 +511,26 @@ export function FormEditor({ initial }: { initial: Initial }) {
             </div>
           ) : (
             <div>
-              <div className="mb-3 grid grid-cols-2 gap-2" role="group" aria-label="Pengaturan form">
-                <button type="button" aria-pressed={asideTab === "form"} onClick={() => setAsideTab("form")} className={`nb-btn min-h-10 px-3 py-2 text-sm ${asideTab === "form" ? "" : "nb-btn-ghost"}`}>Form</button>
-                <button type="button" aria-pressed={asideTab === "theme"} onClick={() => setAsideTab("theme")} className={`nb-btn min-h-10 px-3 py-2 text-sm ${asideTab === "theme" ? "" : "nb-btn-ghost"}`}>Tema</button>
+              <div className="mb-3 grid grid-cols-3 gap-2" role="group" aria-label="Pengaturan form">
+                <button type="button" aria-pressed={asideTab === "form"} onClick={() => setAsideTab("form")} className={`nb-btn min-h-10 px-2 py-2 text-xs sm:text-sm font-bold ${asideTab === "form" ? "" : "nb-btn-ghost"}`}>Form</button>
+                <button type="button" aria-pressed={asideTab === "theme"} onClick={() => setAsideTab("theme")} className={`nb-btn min-h-10 px-2 py-2 text-xs sm:text-sm font-bold ${asideTab === "theme" ? "" : "nb-btn-ghost"}`}>Tema</button>
+                <button type="button" aria-pressed={asideTab === "audio"} onClick={() => setAsideTab("audio")} className={`nb-btn min-h-10 px-2 py-2 text-xs sm:text-sm font-bold ${asideTab === "audio" ? "" : "nb-btn-ghost"}`}>Audio</button>
               </div>
-              {asideTab === "form" ? <FormSettingsPanel settings={settings} onChange={changeSettings} /> : <ThemePanel theme={theme} onChange={changeTheme} />}
+              {asideTab === "form" ? (
+                <FormSettingsPanel settings={settings} onChange={changeSettings} />
+              ) : asideTab === "theme" ? (
+                <ThemePanel theme={theme} onChange={changeTheme} />
+              ) : (
+                <AudioSettingsPanel
+                  audio={settings.audio ?? DEFAULT_AUDIO_SETTINGS}
+                  activeTheme={theme?.preset}
+                  onChange={(patch) => {
+                    changeSettings({
+                      audio: { ...(settings.audio ?? DEFAULT_AUDIO_SETTINGS), ...patch },
+                    });
+                  }}
+                />
+              )}
             </div>
           )}
         </aside>

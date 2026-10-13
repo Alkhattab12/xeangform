@@ -4,7 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   Check,
   Disc,
-  FolderMusic,
+  ListMusic,
   Headphones,
   Info,
   Link as LinkIcon,
@@ -322,7 +322,7 @@ export function AudioSettingsPanel({ audio, activeTheme, onChange }: Props) {
               sourceMode === "library" ? "" : "nb-btn-ghost"
             }`}
           >
-            <FolderMusic size={14} className="mr-1 inline" aria-hidden="true" /> Pustaka ({BUILTIN_AUDIO_TRACKS.length})
+            <ListMusic size={14} className="mr-1 inline" aria-hidden="true" /> Pustaka ({BUILTIN_AUDIO_TRACKS.length})
           </button>
           <button
             type="button"

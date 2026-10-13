@@ -7,6 +7,7 @@ import {
   formSchemaJson,
   formThemeSchema,
   hasAnswerKey,
+  parseSettings,
   type FieldType,
   type FileCategory,
   type FormField,
@@ -228,11 +229,10 @@ export function parseImport(input: string): ParseResult {
     else warnings.push("Tema pada file tidak valid dan diabaikan.");
   }
   const rawSettings = isObj(meta.settings) ? meta.settings : {};
-  const settings: FormSettings = {
-    quiz: rawSettings.quiz === true,
-    allowTabSwitch: rawSettings.allowTabSwitch !== false,
-    oneResponsePerAccount: rawSettings.oneResponsePerAccount === true,
-  };
+  const settings: FormSettings = parseSettings(rawSettings);
+  if (rawSettings.quiz !== undefined) settings.quiz = rawSettings.quiz === true;
+  if (rawSettings.allowTabSwitch !== undefined) settings.allowTabSwitch = rawSettings.allowTabSwitch !== false;
+  if (rawSettings.oneResponsePerAccount !== undefined) settings.oneResponsePerAccount = rawSettings.oneResponsePerAccount === true;
 
   const fields: FormField[] = [];
   rawFields.forEach((r, i) => {
