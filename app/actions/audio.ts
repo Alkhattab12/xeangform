@@ -3,6 +3,7 @@
 import { customAlphabet } from "nanoid";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { getVerifiedUser } from "@/lib/auth/verified-user";
 import { isOwnedAudioPath } from "@/lib/audio/safe-src";
 import {
   playlistTrackSchema,
@@ -42,9 +43,7 @@ const MIME_BY_FORMAT: Record<string, string> = {
 export async function uploadAudioTrackAction(formData: FormData): Promise<AudioUploadResult> {
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getVerifiedUser(supabase);
 
     if (!user) {
       return { ok: false, error: "Silakan masuk terlebih dahulu untuk mengunggah audio." };
@@ -164,9 +163,7 @@ export async function uploadAudioTrackAction(formData: FormData): Promise<AudioU
 export async function getUserAudioLibraryAction(): Promise<UserLibraryResult> {
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getVerifiedUser(supabase);
 
     if (!user) {
       return { ok: false, error: "Silakan masuk terlebih dahulu." };
@@ -236,9 +233,7 @@ export async function getUserAudioLibraryAction(): Promise<UserLibraryResult> {
 export async function deleteUploadedAudioAction(storagePath: string): Promise<{ ok: boolean; error?: string }> {
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getVerifiedUser(supabase);
 
     if (!user) {
       return { ok: false, error: "Silakan masuk terlebih dahulu." };

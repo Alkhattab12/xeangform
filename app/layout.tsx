@@ -1,8 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { Fredoka, IBM_Plex_Mono, Inter, Lora, Orbitron, Space_Grotesk } from "next/font/google";
-import { BackgroundProvider } from "@/components/background/BackgroundContext";
-import { GlobalBackground } from "@/components/background/GlobalBackground";
+import { AmbientBackground } from "@/components/background/AmbientBackground";
+import { BackgroundProvider } from "@/components/background/BackgroundProvider";
 import { LoadingProvider } from "@/components/ui/LoadingProvider";
+import { BG_INIT_SCRIPT } from "@/lib/background/mode";
 import "./globals.css";
 
 const display = Space_Grotesk({ subsets: ["latin"], variable: "--font-space-grotesk", display: "swap" });
@@ -27,10 +28,14 @@ const fontVars = [display, sans, mono, rounded, serif, futuristic].map((f) => f.
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="id" className={fontVars} data-bg-mode="motion">
+    // suppressHydrationWarning: skrip di <head> menambahkan atribut data-bg-motion sebelum React hydrate
+    <html lang="id" className={fontVars} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: BG_INIT_SCRIPT }} />
+      </head>
       <body>
         <BackgroundProvider>
-          <GlobalBackground />
+          <AmbientBackground />
           <LoadingProvider>{children}</LoadingProvider>
         </BackgroundProvider>
       </body>

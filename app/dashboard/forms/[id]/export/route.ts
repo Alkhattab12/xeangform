@@ -2,6 +2,7 @@ import { z } from "zod";
 import { buildExport } from "@/lib/forms/portable";
 import { formSchemaJson, parseSettings, themeFromJson } from "@/lib/forms/schema";
 import { createClient } from "@/lib/supabase/server";
+import { getVerifiedUser } from "@/lib/auth/verified-user";
 
 export const dynamic = "force-dynamic";
 
@@ -10,9 +11,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!z.string().uuid().safeParse(id).success) return new Response("Tidak ditemukan", { status: 404 });
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getVerifiedUser(supabase);
   if (!user) return new Response("Belum masuk", { status: 401 });
 
   // RLS + filter owner: hanya form milik sendiri

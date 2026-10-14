@@ -11,73 +11,45 @@ type Props = {
   defaultValue?: string;
   hint?: string;
   error?: string;
-  placeholder?: string;
-  required?: boolean;
+  /** Tombol tampilkan/sembunyikan. Default: aktif untuk type="password". */
+  revealable?: boolean;
 };
 
-export function AuthField({
-  id,
-  label,
-  type = "text",
-  autoComplete,
-  defaultValue,
-  hint,
-  error,
-  placeholder,
-  required,
-}: Props) {
-  const [showPassword, setShowPassword] = useState(false);
-  const isPassword = type === "password";
-  const actualType = isPassword ? (showPassword ? "text" : "password") : type;
-
-  const describedBy = [error ? `${id}-error` : null, hint ? `${id}-hint` : null]
-    .filter(Boolean)
-    .join(" ") || undefined;
-
+export function AuthField({ id, label, type = "text", autoComplete, defaultValue, hint, error, revealable }: Props) {
+  const [shown, setShown] = useState(false);
+  const canReveal = (revealable ?? type === "password") && type === "password";
+  const describedBy = [error ? `${id}-error` : null, hint ? `${id}-hint` : null].filter(Boolean).join(" ") || undefined;
   return (
     <div>
-      <div className="mb-2 flex items-center justify-between">
-        <label htmlFor={id} className="block font-display font-bold">
-          {label}
-        </label>
-        {isPassword && (
-          <button
-            type="button"
-            onClick={() => setShowPassword((prev) => !prev)}
-            className="flex items-center gap-1.5 text-xs font-semibold text-ink/75 hover:text-ink focus-visible:outline-none focus-visible:underline"
-            tabIndex={-1}
-            aria-label={showPassword ? "Sembunyikan kata sandi" : "Perlihatkan kata sandi"}
-          >
-            {showPassword ? (
-              <>
-                <EyeOff size={15} />
-                <span>Sembunyikan</span>
-              </>
-            ) : (
-              <>
-                <Eye size={15} />
-                <span>Perlihatkan</span>
-              </>
-            )}
-          </button>
-        )}
-      </div>
-
+      <label htmlFor={id} className="mb-2 block font-display font-bold">
+        {label}
+      </label>
       <div className="relative">
         <input
           id={id}
           name={id}
-          type={actualType}
+          type={canReveal && shown ? "text" : type}
           autoComplete={autoComplete}
           defaultValue={defaultValue}
-          placeholder={placeholder}
-          required={required}
-          className="nb-input"
+          className={`nb-input ${canReveal ? "pr-12" : ""}`}
           aria-invalid={error ? true : undefined}
           aria-describedby={describedBy}
+          // Cegah koreksi otomatis/kapitalisasi pada kolom sandi saat dibuka
+          autoCapitalize={type === "password" ? "none" : undefined}
+          spellCheck={type === "password" ? false : undefined}
         />
+        {canReveal && (
+          <button
+            type="button"
+            onClick={() => setShown((v) => !v)}
+            aria-label={shown ? `Sembunyikan ${label.toLowerCase()}` : `Tampilkan ${label.toLowerCase()}`}
+            aria-pressed={shown}
+            className="absolute right-0 top-0 inline-flex h-full w-11 items-center justify-center text-fg hover:text-cobalt"
+          >
+            {shown ? <EyeOff className="h-5 w-5" aria-hidden="true" /> : <Eye className="h-5 w-5" aria-hidden="true" />}
+          </button>
+        )}
       </div>
-
       {hint && (
         <p id={`${id}-hint`} className="nb-mono mt-2">
           {hint}

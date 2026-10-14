@@ -7,6 +7,7 @@ import { PublicForm } from "@/components/public/PublicForm";
 import { ThemeScope } from "@/components/public/ThemeScope";
 import { findPriorSubmission, getPublicForm } from "@/lib/forms/public";
 import { createClient } from "@/lib/supabase/server";
+import { getVerifiedUser } from "@/lib/auth/verified-user";
 
 export const dynamic = "force-dynamic"; // unpublish & status pengisian langsung berlaku
 
@@ -25,9 +26,7 @@ export default async function PublicFormPage({ params }: { params: Promise<{ slu
   let gate: ReactNode = null;
   if (form.settings.oneResponsePerAccount) {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getVerifiedUser(supabase);
     if (!user) {
       gate = <GateCard kind="login" slug={slug} title={form.title} />;
     } else {

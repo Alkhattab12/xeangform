@@ -8,6 +8,7 @@ import { isRateLimited } from "@/lib/forms/rate-limit";
 import { formSchemaJson, parseSettings, type FormField } from "@/lib/forms/schema";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { getVerifiedUser } from "@/lib/auth/verified-user";
 
 const nanoid = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 16);
 const slugSchema = z.string().regex(/^[a-z0-9-]{6,64}$/);
@@ -70,9 +71,7 @@ export async function prepareFileUpload(
     // Form yang mewajibkan login (1 respons per akun) juga mewajibkan login untuk mengunggah berkas
     if (parseSettings(form.settings_json).oneResponsePerAccount) {
       const sb = await createClient();
-      const {
-        data: { user },
-      } = await sb.auth.getUser();
+      const user = await getVerifiedUser(sb);
       if (!user) return { ok: false, error: "Masuk dulu untuk mengunggah berkas pada form ini." };
     }
 
@@ -148,9 +147,7 @@ export async function getFileDownloadUrl(
 
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getVerifiedUser(supabase);
     if (!user) {
       return { ok: false, error: "Silakan masuk terlebih dahulu." };
     }

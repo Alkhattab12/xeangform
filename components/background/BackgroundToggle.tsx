@@ -1,56 +1,62 @@
 "use client";
 
-import React from "react";
-import { Sparkles, CircleOff } from "lucide-react";
-import { useBackground } from "./BackgroundContext";
+import { Pause, Sparkles } from "lucide-react";
+import { useBackground } from "./BackgroundProvider";
 
-export function BackgroundToggle({
-  showLabel = false,
-  className = "",
-}: {
-  showLabel?: boolean;
-  className?: string;
-}) {
-  const { mode, toggleMode, isMounted } = useBackground();
+/**
+ * Kontrol mode background.
+ *  - variant="icon": tombol 44px bergaya lonceng notifikasi (untuk header).
+ *  - variant="full": pilihan Gerak/Diam berlabel (untuk halaman Akun).
+ */
+export function BackgroundToggle({ variant = "icon" }: { variant?: "icon" | "full" }) {
+  const { pref, effective, reducedMotion, setPref } = useBackground();
+  const locked = reducedMotion;
+  const lockedNote = "Dimatikan oleh pengaturan sistem (kurangi gerakan).";
 
-  // Sebelum mount, render placeholder yang stabil untuk menghindari hydration mismatch
-  if (!isMounted) {
+  if (variant === "icon") {
+    const moving = effective === "gerak";
+    const label = locked ? `Animasi latar: diam. ${lockedNote}` : moving ? "Animasi latar: gerak. Ketuk untuk diam." : "Animasi latar: diam. Ketuk untuk gerak.";
     return (
       <button
         type="button"
-        disabled
-        className={`nb-btn nb-btn-ghost text-xs py-1.5 px-2.5 min-h-[38px] opacity-70 ${className}`}
-        aria-label="Memuat preferensi background"
+        onClick={() => setPref(pref === "gerak" ? "diam" : "gerak")}
+        disabled={locked}
+        aria-label={label}
+        aria-pressed={moving}
+        title={label}
+        className="nb-bell-btn disabled:cursor-not-allowed disabled:opacity-60"
       >
-        <Sparkles className="h-4 w-4" />
-        {showLabel && <span className="ml-1.5">Mode Gerak</span>}
+        {moving ? <Sparkles className="h-5 w-5" strokeWidth={2.2} aria-hidden="true" /> : <Pause className="h-5 w-5" strokeWidth={2.2} aria-hidden="true" />}
       </button>
     );
   }
 
-  const isMotion = mode === "motion";
-
+  const options: { value: "gerak" | "diam"; label: string; hint: string }[] = [
+    { value: "gerak", label: "Gerak", hint: "Latar bergerak halus" },
+    { value: "diam", label: "Diam", hint: "Latar statis, tanpa animasi" },
+  ];
   return (
-    <button
-      type="button"
-      onClick={toggleMode}
-      className={`nb-btn nb-btn-ghost text-xs py-1.5 px-2.5 min-h-[38px] flex items-center gap-1.5 transition-colors ${
-        isMotion ? "border-cobalt hover:border-line" : "border-line"
-      } ${className}`}
-      title={isMotion ? "Mode Gerak: Animasi background aktif (Klik untuk Mode Diam)" : "Mode Diam: Background statis (Klik untuk Mode Gerak)"}
-      aria-label={isMotion ? "Ubah ke Mode Diam (Animasi Statis)" : "Ubah ke Mode Gerak (Animasi Halus)"}
-    >
-      {isMotion ? (
-        <>
-          <Sparkles className="h-4 w-4 text-cobalt shrink-0" />
-          {showLabel && <span className="font-display font-bold">Mode Gerak</span>}
-        </>
-      ) : (
-        <>
-          <CircleOff className="h-4 w-4 text-ink/70 shrink-0" />
-          {showLabel && <span className="font-display font-bold">Mode Diam</span>}
-        </>
-      )}
-    </button>
+    <div>
+      <div role="radiogroup" aria-label="Animasi latar" className="grid grid-cols-2 gap-3">
+        {options.map((o) => {
+          const selected = effective === o.value;
+          return (
+            <button
+              key={o.value}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              disabled={locked && o.value === "gerak"}
+              onClick={() => setPref(o.value)}
+              className={`nb-btn flex-col items-start gap-1 text-left ${selected ? "" : "nb-btn-ghost"}`}
+            >
+              <span>{o.label}</span>
+              <span className="nb-mono normal-case tracking-normal opacity-80">{o.hint}</span>
+            </button>
+          );
+        })}
+      </div>
+      {locked && <p className="nb-mono mt-3 normal-case tracking-normal">{lockedNote}</p>}
+    </div>
   );
 }

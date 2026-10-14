@@ -10,6 +10,7 @@ import { validateAnswers } from "@/lib/forms/validate";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { serviceRoleKey } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
+import { getVerifiedUser } from "@/lib/auth/verified-user";
 import { createNotification } from "@/lib/notifications/create";
 import { verifyUploadedFiles } from "@/lib/forms/upload-verify";
 
@@ -72,9 +73,7 @@ export async function submitResponse(slug: string, input: unknown): Promise<Subm
     let respondent: { id: string; email: string | null; name: string | null } | null = null;
     if (settings.oneResponsePerAccount) {
       const sb = await createClient();
-      const {
-        data: { user },
-      } = await sb.auth.getUser();
+      const user = await getVerifiedUser(sb);
       if (!user) return { ok: false, needsLogin: true, error: "Masuk dulu untuk mengisi form ini." };
       const dn = user.user_metadata?.display_name;
       respondent = { id: user.id, email: user.email ?? null, name: typeof dn === "string" ? dn : null };

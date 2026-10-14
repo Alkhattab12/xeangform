@@ -3,6 +3,7 @@ import { buildCsv } from "@/lib/forms/csv";
 import { loadResponses, parseFilters } from "@/lib/forms/responses";
 import { formSchemaJson, parseSettings } from "@/lib/forms/schema";
 import { createClient } from "@/lib/supabase/server";
+import { getVerifiedUser } from "@/lib/auth/verified-user";
 
 export const dynamic = "force-dynamic";
 const EXPORT_CAP = 5000;
@@ -12,9 +13,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (!z.string().uuid().safeParse(id).success) return new Response("Tidak ditemukan", { status: 404 });
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getVerifiedUser(supabase);
   if (!user) return new Response("Belum masuk", { status: 401 });
 
   // RLS + filter owner: hanya form milik sendiri

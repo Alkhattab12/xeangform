@@ -1,105 +1,87 @@
-import type { Metadata } from "next";
 import Link from "next/link";
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { ArrowLeft, User, Mail, Shield, Palette } from "lucide-react";
+import { ArrowLeft, BadgeCheck, KeyRound, Mail, Palette, UserRound } from "lucide-react";
+import { EmailForm, PasswordForm, ProfileForm } from "@/components/account/AccountForms";
+import { BackgroundToggle } from "@/components/background/BackgroundToggle";
 import { getSessionUser } from "@/lib/auth/session";
-import {
-  ProfileNameForm,
-  EmailUpdateForm,
-  PasswordChangeForm,
-  BackgroundPreferenceCard,
-} from "@/components/account/AccountForms";
 
-export const metadata: Metadata = {
-  title: "Pengaturan Akun",
-  description: "Kelola profil, keamanan akun, dan preferensi background aplikasi.",
-};
+export const metadata: Metadata = { title: "Akun" };
+export const dynamic = "force-dynamic";
 
-export default async function AkunPage() {
+function Section({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
+  return (
+    <section className="nb-panel nb-shadow border-[3px] p-5 sm:p-6">
+      <h2 className="mb-5 flex items-center gap-3 font-display text-2xl font-bold">
+        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center border-2 border-line bg-accent text-ink" aria-hidden="true">
+          {icon}
+        </span>
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+export default async function AkunPage({ searchParams }: { searchParams: Promise<{ info?: string }> }) {
   const session = await getSessionUser();
-  if (!session) redirect("/masuk");
-
-  const isConfirmed = Boolean(session.user.email_confirmed_at || session.user.confirmed_at);
+  if (!session) redirect("/masuk?next=%2Fdashboard%2Fakun");
+  const sp = await searchParams;
+  const { user, displayName } = session;
+  const pendingEmail = (user as { new_email?: string }).new_email;
 
   return (
-    <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-      {/* Tombol kembali ke dashboard */}
-      <div className="mb-6">
-        <Link
-          href="/dashboard"
-          className="inline-flex items-center gap-2 text-sm font-bold font-display underline-offset-4 hover:underline text-ink"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          <span>Kembali ke Dashboard</span>
+    <main className="mx-auto max-w-3xl space-y-8 px-5 py-8 pb-24">
+      <div>
+        <Link href="/dashboard" className="inline-flex items-center gap-2 font-bold underline-offset-4 hover:underline">
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Dashboard
         </Link>
+        <h1 className="mt-4 font-display text-4xl font-bold sm:text-5xl">Akun</h1>
       </div>
 
-      {/* Header Halaman */}
-      <div className="mb-8 border-b-[3px] border-line pb-6">
-        <span className="nb-mono text-xs uppercase tracking-wider text-ink/70">Manajemen Pengguna</span>
-        <h1 className="font-display text-3xl sm:text-4xl font-bold mt-1">Pengaturan Akun</h1>
-        <p className="mt-2 text-base text-ink/80">
-          Kelola profil publik, keamanan kata sandi, dan preferensi background global Xeangform.
+      {sp.info === "email" && (
+        <div role="status" className="nb-panel border-[3px] bg-accent p-4 font-bold text-ink">
+          {pendingEmail
+            ? `Konfirmasi diterima. Perubahan ke ${pendingEmail} masih menunggu konfirmasi tambahan; cek kotak masuk email lama dan baru.`
+            : "Konfirmasi diterima. Email akunmu sudah diperbarui."}
+        </div>
+      )}
+
+      <Section icon={<UserRound className="h-5 w-5" />} title="Profil">
+        <ProfileForm displayName={displayName} />
+      </Section>
+
+      <Section icon={<Mail className="h-5 w-5" />} title="Email">
+        <div className="mb-6 space-y-3">
+          <div>
+            <p className="nb-mono">Email saat ini</p>
+            <p className="mt-1 flex flex-wrap items-center gap-2 break-all font-display text-xl font-bold">
+              {user.email}
+              <span className="nb-mono inline-flex items-center gap-1 border-2 border-line bg-accent px-2 py-1 text-ink">
+                <BadgeCheck className="h-3.5 w-3.5" aria-hidden="true" /> Terverifikasi
+              </span>
+            </p>
+          </div>
+          {pendingEmail && (
+            <p role="status" className="nb-panel border-2 bg-orange p-3 font-bold text-ink">
+              Menunggu konfirmasi perubahan ke <span className="break-all">{pendingEmail}</span>. Email akunmu belum berubah.
+            </p>
+          )}
+        </div>
+        <EmailForm />
+      </Section>
+
+      <Section icon={<KeyRound className="h-5 w-5" />} title="Keamanan">
+        <p className="mb-5 leading-relaxed">
+          Kata sandi tidak pernah ditampilkan. Setelah diubah, perangkat lain akan dikeluarkan dari akunmu.
         </p>
-      </div>
+        <PasswordForm />
+      </Section>
 
-      <div className="space-y-8">
-        {/* Seksi 1: Profil */}
-        <section className="nb-panel nb-shadow border-[3px] bg-surface p-5 sm:p-7">
-          <div className="flex items-center gap-3 border-b-[2px] border-line/20 pb-4 mb-5">
-            <div className="flex h-10 w-10 items-center justify-center border-[2px] border-line bg-accent text-ink">
-              <User className="h-5 w-5" />
-            </div>
-            <div>
-              <h2 className="font-display text-xl font-bold">Profil Akun</h2>
-              <p className="text-xs text-ink/75">Ubah nama tampilan yang digunakan di seluruh aplikasi.</p>
-            </div>
-          </div>
-          <ProfileNameForm initialName={session.displayName} />
-        </section>
-
-        {/* Seksi 2: Email & Verifikasi */}
-        <section className="nb-panel nb-shadow border-[3px] bg-surface p-5 sm:p-7">
-          <div className="flex items-center gap-3 border-b-[2px] border-line/20 pb-4 mb-5">
-            <div className="flex h-10 w-10 items-center justify-center border-[2px] border-line bg-lime text-ink">
-              <Mail className="h-5 w-5" />
-            </div>
-            <div>
-              <h2 className="font-display text-xl font-bold">Alamat Email & Status</h2>
-              <p className="text-xs text-ink/75">Informasi verifikasi dan mekanisme pembaruan email akun.</p>
-            </div>
-          </div>
-          <EmailUpdateForm currentEmail={session.user.email ?? ""} isConfirmed={isConfirmed} />
-        </section>
-
-        {/* Seksi 3: Keamanan & Kata Sandi */}
-        <section className="nb-panel nb-shadow border-[3px] bg-surface p-5 sm:p-7">
-          <div className="flex items-center gap-3 border-b-[2px] border-line/20 pb-4 mb-5">
-            <div className="flex h-10 w-10 items-center justify-center border-[2px] border-line bg-orange text-ink">
-              <Shield className="h-5 w-5" />
-            </div>
-            <div>
-              <h2 className="font-display text-xl font-bold">Keamanan & Kata Sandi</h2>
-              <p className="text-xs text-ink/75">Perbarui kata sandi secara aman tanpa mengekspos kata sandi lama.</p>
-            </div>
-          </div>
-          <PasswordChangeForm />
-        </section>
-
-        {/* Seksi 4: Background Animasi Global */}
-        <section className="nb-panel nb-shadow border-[3px] bg-surface p-5 sm:p-7">
-          <div className="flex items-center gap-3 border-b-[2px] border-line/20 pb-4 mb-5">
-            <div className="flex h-10 w-10 items-center justify-center border-[2px] border-line bg-cobalt text-white">
-              <Palette className="h-5 w-5" />
-            </div>
-            <div>
-              <h2 className="font-display text-xl font-bold">Latar Belakang Global</h2>
-              <p className="text-xs text-ink/75">Pilih antara Mode Gerak yang interaktif atau Mode Diam yang tenang.</p>
-            </div>
-          </div>
-          <BackgroundPreferenceCard />
-        </section>
-      </div>
+      <Section icon={<Palette className="h-5 w-5" />} title="Tampilan">
+        <p className="mb-5 leading-relaxed">Pilih apakah latar aplikasi bergerak halus atau diam. Pilihanmu tersimpan di perangkat ini.</p>
+        <BackgroundToggle variant="full" />
+      </Section>
     </main>
   );
 }

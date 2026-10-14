@@ -5,6 +5,7 @@ import { z } from "zod";
 import { uuidV5 } from "@/lib/notifications/ids";
 import { mapNotificationRow, type NotificationItem, type NotificationRow } from "@/lib/notifications/types";
 import { createClient } from "@/lib/supabase/server";
+import { getVerifiedUser } from "@/lib/auth/verified-user";
 
 const uuidSchema = z.string().uuid();
 
@@ -66,22 +67,16 @@ async function seedInitialAnnouncementsOnce(db: Db, user: { id: string; user_met
   }
 }
 
-function isVerified(user: { email_confirmed_at?: string | null; confirmed_at?: string | null } | null): boolean {
-  return Boolean(user && (user.email_confirmed_at || user.confirmed_at));
-}
-
 /**
  * Mengambil daftar notifikasi pengguna terbaru beserta jumlah belum dibaca.
  */
 export async function getNotificationsAction(limit = 30): Promise<NotificationsResult> {
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getVerifiedUser(supabase);
 
-    if (!user || !isVerified(user)) {
-      return { ok: false, error: "Silakan masuk dan konfirmasi email terlebih dahulu.", notifications: [], unreadCount: 0 };
+    if (!user) {
+      return { ok: false, error: "Silakan masuk terlebih dahulu.", notifications: [], unreadCount: 0 };
     }
 
     const db = supabase; // RLS (notifications_user_*) sudah membatasi ke baris milik user
@@ -132,12 +127,10 @@ export async function markNotificationAsReadAction(notificationId: string): Prom
 
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getVerifiedUser(supabase);
 
-    if (!user || !isVerified(user)) {
-      return { ok: false, error: "Sesi berakhir atau email belum dikonfirmasi." };
+    if (!user) {
+      return { ok: false, error: "Sesi berakhir. Silakan masuk kembali." };
     }
 
     const db = supabase; // RLS membatasi ke baris milik user
@@ -169,12 +162,10 @@ export async function markNotificationAsReadAction(notificationId: string): Prom
 export async function markAllNotificationsAsReadAction(): Promise<ActionResult> {
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getVerifiedUser(supabase);
 
-    if (!user || !isVerified(user)) {
-      return { ok: false, error: "Sesi berakhir atau email belum dikonfirmasi." };
+    if (!user) {
+      return { ok: false, error: "Sesi berakhir. Silakan masuk kembali." };
     }
 
     const db = supabase; // RLS membatasi ke baris milik user
@@ -210,12 +201,10 @@ export async function deleteNotificationAction(notificationId: string): Promise<
 
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getVerifiedUser(supabase);
 
-    if (!user || !isVerified(user)) {
-      return { ok: false, error: "Sesi berakhir atau email belum dikonfirmasi." };
+    if (!user) {
+      return { ok: false, error: "Sesi berakhir. Silakan masuk kembali." };
     }
 
     const db = supabase; // RLS membatasi ke baris milik user

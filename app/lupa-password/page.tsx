@@ -5,7 +5,8 @@ import { ForgotForm } from "@/components/auth/forms";
 
 export const metadata: Metadata = { title: "Lupa kata sandi" };
 
-export default function LupaPasswordPage() {
+export default async function LupaPasswordPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+  const sp = await searchParams;
   return (
     <AuthShell
       title="Lupa kata sandi"
@@ -16,7 +17,13 @@ export default function LupaPasswordPage() {
         </p>
       }
     >
-      <ForgotForm />
+      <ForgotForm linkMessage={
+          sp.error === "layanan"
+            ? "Layanan autentikasi sedang bermasalah. Coba buka tautan reset itu lagi beberapa saat lagi."
+            : sp.error
+              ? "Tautan reset tidak valid atau sudah kedaluwarsa. Masukkan email lagi untuk meminta tautan baru."
+              : undefined
+        } />
     </AuthShell>
   );
 }

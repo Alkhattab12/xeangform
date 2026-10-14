@@ -3,6 +3,7 @@
 import { customAlphabet } from "nanoid";
 import { MAX_IMPORT_BYTES, parseImport } from "@/lib/forms/portable";
 import { createClient } from "@/lib/supabase/server";
+import { getVerifiedUser } from "@/lib/auth/verified-user";
 
 const makeSlug = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 10);
 
@@ -16,9 +17,7 @@ export async function importForm(text: string): Promise<ImportResult> {
   if (!parsed.ok) return parsed;
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getVerifiedUser(supabase);
   if (!user) return { ok: false, errors: ["Sesi berakhir. Muat ulang halaman lalu masuk kembali."] };
 
   for (let i = 0; i < 3; i++) {

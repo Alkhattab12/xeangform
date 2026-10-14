@@ -1,7 +1,7 @@
-type LogoProps = { size?: number; withWordmark?: boolean; className?: string };
+type LogoProps = { size?: number; withWordmark?: boolean; className?: string; wordmarkClassName?: string };
 
 /** Logo geometris "S" blok + titik cobalt. Dekoratif jika ada wordmark. */
-export function Logo({ size = 40, withWordmark = true, className = "" }: LogoProps) {
+export function Logo({ size = 40, withWordmark = true, className = "", wordmarkClassName = "" }: LogoProps) {
   return (
     <span className={`inline-flex items-center gap-3 ${className}`}>
       <svg
@@ -18,7 +18,7 @@ export function Logo({ size = 40, withWordmark = true, className = "" }: LogoPro
         <rect x="30" y="27" width="7" height="7" className="fill-cobalt" />
       </svg>
       {withWordmark && (
-        <span className="font-display text-xl font-bold tracking-tight">
+        <span className={`font-display text-xl font-bold tracking-tight ${wordmarkClassName}`}>
           Syamil<span className="nb-mono ml-1 align-top">Form</span>
         </span>
       )}

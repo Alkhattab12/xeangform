@@ -1,52 +1,43 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { classifyLinkError, failurePath, parseFlow, parseOtpType, successPath } from "@/lib/auth/callback";
+import { isEmailVerified } from "@/lib/auth/verified";
 import { createClient } from "@/lib/supabase/server";
 import { safeNext } from "@/lib/utils/safe-next";
 
-/** Menukar ?code= dari email (konfirmasi akun / reset password) menjadi sesi. */
+/**
+ * Callback tautan email Supabase (konfirmasi akun, ubah email, reset password).
+ * Mendukung dua bentuk tautan:
+ *  - ?code=...            (PKCE; butuh cookie code-verifier dari perangkat yang sama)
+ *  - ?token_hash=&type=   (verifyOtp; berfungsi lintas perangkat, butuh template email kustom)
+ * Setiap kegagalan diarahkan ke halaman yang menawarkan tindakan lanjutan yang tepat.
+ */
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
-  const code = searchParams.get("code");
+  const flow = parseFlow(searchParams.get("flow"));
   const next = safeNext(searchParams.get("next"));
-  const error = searchParams.get("error");
-  const errorCode = searchParams.get("error_code");
-  const errorDescription = searchParams.get("error_description");
+  const to = (path: string) => NextResponse.redirect(`${origin}${path}`);
 
-  // Jika Supabase redirect langsung dengan pesan error (misal token expired)
-  if (error || errorCode) {
-    const isExpired = errorCode === "otp_expired" || error === "access_denied" || errorDescription?.toLowerCase().includes("expired");
-    const param = isExpired ? "tautan_kedaluwarsa" : "tautan_tidak_valid";
-    return NextResponse.redirect(`${origin}/masuk?error=${param}`);
-  }
+  // Supabase menaruh error di query bila verifikasi di sisi mereka sudah gagal (mis. otp_expired)
+  const providerError = searchParams.get("error_code") ?? searchParams.get("error");
+  if (providerError) return to(failurePath(flow, classifyLinkError(providerError)));
 
-  if (code) {
-    const supabase = await createClient();
-    const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-    if (!exchangeError) {
-      // Verifikasi status user setelah penukaran kode
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+  const code = searchParams.get("code");
+  const tokenHash = searchParams.get("token_hash");
+  const type = parseOtpType(searchParams.get("type"));
+  if (!code && !(tokenHash && type)) return to(failurePath(flow, "tautan"));
 
-      const isConfirmed = Boolean(user?.email_confirmed_at || user?.confirmed_at);
-      if (user && isConfirmed) {
-        // Jika alur reset password, langsung bawa ke rute reset-password
-        if (next === "/reset-password") {
-          return NextResponse.redirect(`${origin}/reset-password`);
-        }
-        // Redirect aman ke tujuan atau dashboard dengan penanda verified
-        const target = next.startsWith("/dashboard")
-          ? next.includes("?")
-            ? `${next}&verified=1`
-            : `${next}?verified=1`
-          : next;
-        return NextResponse.redirect(`${origin}${target}`);
-      }
-    }
+  const supabase = await createClient();
+  const { data, error } =
+    tokenHash && type
+      ? await supabase.auth.verifyOtp({ type, token_hash: tokenHash })
+      : await supabase.auth.exchangeCodeForSession(code as string);
 
-    const isExpired = exchangeError?.message?.toLowerCase().includes("expired");
-    return NextResponse.redirect(`${origin}/masuk?error=${isExpired ? "tautan_kedaluwarsa" : "tautan_tidak_valid"}`);
-  }
+  if (error) return to(failurePath(flow, classifyLinkError(error)));
 
-  return NextResponse.redirect(`${origin}/masuk?error=tautan_tidak_valid`);
+  // Jangan tampilkan "berhasil" kecuali backend benar-benar menyatakan email terverifikasi
+  // (pengecualian: reset password dan ubah email yang menunggu konfirmasi kedua, yang memang bukan verifikasi akun baru)
+  const isSignup = flow === "signup" || type === "signup" || type === "email";
+  if (isSignup && !isEmailVerified(data.user)) return to(failurePath(flow, "tautan"));
+
+  return to(successPath(flow, type, next));
 }
-

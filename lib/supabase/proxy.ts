@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { isEmailVerified } from "@/lib/auth/verified";
 import { supabaseEnv } from "./env";
 
 /** Menyegarkan sesi di setiap request + proteksi rute /dashboard. */
@@ -31,17 +32,8 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isEmailConfirmed = Boolean(user?.email_confirmed_at || user?.confirmed_at);
   const path = request.nextUrl.pathname;
-
-  if (user && !isEmailConfirmed && path.startsWith("/dashboard")) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/masuk";
-    url.search = "";
-    url.searchParams.set("error", "email_belum_dikonfirmasi");
-    if (user.email) url.searchParams.set("email", user.email);
-    return NextResponse.redirect(url);
-  }
+  const verified = isEmailVerified(user);
 
   if (!user && path.startsWith("/dashboard")) {
     const url = request.nextUrl.clone();
@@ -51,7 +43,15 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (user && isEmailConfirmed && (path === "/masuk" || path === "/daftar")) {
+  // Ada sesi tetapi email belum terverifikasi: tidak boleh menyentuh area privat (termasuk server action & ekspor)
+  if (user && !verified && path.startsWith("/dashboard")) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/cek-email";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+
+  if (user && verified && (path === "/masuk" || path === "/daftar")) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     url.search = "";

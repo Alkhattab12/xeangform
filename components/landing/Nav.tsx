@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { Logo } from "@/components/brand/Logo";
 import { BackgroundToggle } from "@/components/background/BackgroundToggle";
+import { Logo } from "@/components/brand/Logo";
 
 const links = [
   { href: "#fitur", label: "Fitur" },

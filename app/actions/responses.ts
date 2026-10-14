@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { getVerifiedUser } from "@/lib/auth/verified-user";
 
 const uuid = z.string().uuid();
 
@@ -24,9 +25,7 @@ export async function deleteResponsesAction(fd: FormData): Promise<void> {
   if (ids.length === 0) redirect(back("error", "Pilih minimal satu respons untuk dihapus."));
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getVerifiedUser(supabase);
   if (!user) redirect("/masuk");
 
   // RLS (submissions_owner_delete) memastikan hanya respons milik form kamu yang terhapus

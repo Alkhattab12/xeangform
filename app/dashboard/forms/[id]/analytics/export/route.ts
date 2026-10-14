@@ -4,6 +4,7 @@ import { toCsv, type CsvCell } from "@/lib/analytics/csv";
 import { parseAnalyticsFilters } from "@/lib/analytics/filters";
 import { runAnalytics } from "@/lib/analytics/run";
 import { createClient } from "@/lib/supabase/server";
+import { getVerifiedUser } from "@/lib/auth/verified-user";
 
 export const dynamic = "force-dynamic";
 const JENIS = ["ringkasan", "kelas", "nilai", "tren", "soal", "opsi", "peserta"] as const;
@@ -15,9 +16,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (!z.string().uuid().safeParse(id).success) return new Response("Tidak ditemukan", { status: 404 });
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getVerifiedUser(supabase);
   if (!user) return new Response("Belum masuk", { status: 401 });
 
   // Otorisasi di server: form harus milik user ini (RLS + filter owner), bukan sekadar menyembunyikan tombol.

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { customAlphabet } from "nanoid";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { getVerifiedUser } from "@/lib/auth/verified-user";
 import { createNotification } from "@/lib/notifications/create";
 import { findUnsafeAudioSrc } from "@/lib/audio/safe-src";
 import { formSchemaJson, formSettingsSchema, formThemeSchema, parseSettings, publishIssues, type FormStatus } from "@/lib/forms/schema";
@@ -18,12 +19,7 @@ export type StatusResult = { ok: true; status: FormStatus } | { ok: false; error
 
 async function requireUser() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (user && !user.email_confirmed_at && !user.confirmed_at) {
-    return { supabase, user: null };
-  }
+  const user = await getVerifiedUser(supabase);
   return { supabase, user };
 }
 

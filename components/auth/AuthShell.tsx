@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Logo } from "@/components/brand/Logo";
+import { BackgroundToggle } from "@/components/background/BackgroundToggle";
 import { Starburst } from "@/components/brand/Shapes";
 
 type Props = { title: string; subtitle?: string; children: React.ReactNode; footer?: React.ReactNode };
@@ -17,7 +18,10 @@ export function AuthShell({ title, subtitle, children, footer }: Props) {
         <p className="nb-mono">Syamil Form / 001</p>
       </aside>
 
-      <main className="flex flex-col justify-center px-5 py-10 sm:px-10">
+      <main className="relative flex flex-col justify-center px-5 py-10 sm:px-10">
+        <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
+          <BackgroundToggle />
+        </div>
         <div className="mx-auto w-full max-w-md">
           <Link href="/" className="mb-8 inline-block lg:hidden" aria-label="Syamil Form — beranda">
             <Logo size={36} />
