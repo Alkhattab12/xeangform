@@ -2,9 +2,8 @@
 
 import { customAlphabet } from "nanoid";
 import { z } from "zod";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { serviceRoleKey } from "@/lib/supabase/env";
+import { isOwnedAudioPath } from "@/lib/audio/safe-src";
 import {
   playlistTrackSchema,
   type PlaylistTrack,
@@ -27,27 +26,14 @@ function sanitizeFilename(name: string): string {
   return clean.slice(-80);
 }
 
-function getSafeStorageClient(supabase: Awaited<ReturnType<typeof createClient>>) {
-  try {
-    if (serviceRoleKey()) {
-      return createAdminClient().storage;
-    }
-  } catch {
-    // Abaikan jika service role key tidak tersedia di env
-  }
-  return supabase.storage;
-}
-
-function getSafeDbClient(supabase: Awaited<ReturnType<typeof createClient>>) {
-  try {
-    if (serviceRoleKey()) {
-      return createAdminClient();
-    }
-  } catch {
-    // Abaikan jika service role key tidak tersedia di env
-  }
-  return supabase;
-}
+// Tipe MIME ditentukan dari format hasil deteksi magic bytes (bukan dari file.type kiriman browser)
+const MIME_BY_FORMAT: Record<string, string> = {
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  ogg: "audio/ogg",
+  m4a: "audio/mp4",
+  aac: "audio/aac",
+};
 
 /**
  * Mengunggah file audio ke Supabase Storage (bucket 'form-audio')
@@ -87,8 +73,6 @@ export async function uploadAudioTrackAction(formData: FormData): Promise<AudioU
       };
     }
 
-    const formIdRaw = formData.get("formId");
-    const formId = typeof formIdRaw === "string" && formIdRaw ? formIdRaw : "library";
     const customTitle = formData.get("title");
     const title =
       typeof customTitle === "string" && customTitle.trim()
@@ -102,55 +86,25 @@ export async function uploadAudioTrackAction(formData: FormData): Promise<AudioU
     const trackUniqueId = nanoid();
     const storagePath = `${user.id}/${trackUniqueId}_${safeName}`;
 
-    // Unggah ke Supabase Storage
+    // Unggah ke Supabase Storage memakai sesi user: policy storage (form_audio_owner_insert) memastikan
+    // hanya folder `<user.id>/` yang bisa ditulis. Bucket dibuat oleh migrasi 0005.
     let publicUrl = "";
     try {
       const buffer = Buffer.from(arrayBuffer);
-      const mimeType = file.type || `audio/${format}`;
-      const storage = getSafeStorageClient(supabase);
+      const mimeType = MIME_BY_FORMAT[format] ?? "audio/mpeg";
 
-      let { data: uploadData, error: uploadErr } = await storage
+      const { error: uploadErr } = await supabase.storage
         .from("form-audio")
-        .upload(storagePath, buffer, {
-          contentType: mimeType,
-          upsert: true,
-        });
-
-      // Self-healing jika bucket belum ada
-      if (
-        uploadErr &&
-        (uploadErr.message?.toLowerCase().includes("bucket not found") ||
-          uploadErr.message?.toLowerCase().includes("not found") ||
-          (uploadErr as { statusCode?: string }).statusCode === "404")
-      ) {
-        if (serviceRoleKey()) {
-          try {
-            const admin = createAdminClient();
-            await admin.storage.createBucket("form-audio", {
-              public: true,
-              fileSizeLimit: MAX_AUDIO_SIZE_BYTES,
-              allowedMimeTypes: ["audio/mpeg", "audio/wav", "audio/ogg", "audio/mp4", "audio/x-m4a", "audio/aac"],
-            });
-
-            const retry = await admin.storage
-              .from("form-audio")
-              .upload(storagePath, buffer, {
-                contentType: mimeType,
-                upsert: true,
-              });
-            uploadErr = retry.error;
-          } catch {
-            // lanjut ke pengecekan error
-          }
-        } else {
-          return {
-            ok: false,
-            error: "Bucket 'form-audio' belum dibuat di Supabase Storage. Harap buat bucket 'form-audio' (Public) di dashboard Supabase.",
-          };
-        }
-      }
+        .upload(storagePath, buffer, { contentType: mimeType, upsert: false });
 
       if (uploadErr) {
+        const m = uploadErr.message?.toLowerCase() ?? "";
+        if (m.includes("bucket not found") || (uploadErr as { statusCode?: string }).statusCode === "404") {
+          return {
+            ok: false,
+            error: "Bucket 'form-audio' belum ada. Jalankan migrasi 0005_form_audio.sql atau buat bucket 'form-audio' (Public) di dashboard Supabase.",
+          };
+        }
         console.error("Supabase Storage upload error:", uploadErr);
         return {
           ok: false,
@@ -158,7 +112,7 @@ export async function uploadAudioTrackAction(formData: FormData): Promise<AudioU
         };
       }
 
-      const { data: pubData } = storage.from("form-audio").getPublicUrl(storagePath);
+      const { data: pubData } = supabase.storage.from("form-audio").getPublicUrl(storagePath);
       publicUrl = pubData.publicUrl;
     } catch (storageErr) {
       console.warn("Storage upload exception:", storageErr);
@@ -182,24 +136,20 @@ export async function uploadAudioTrackAction(formData: FormData): Promise<AudioU
       source: "upload",
     };
 
-    // Rekam ke user_audio_tracks jika tabel tersedia
-    try {
-      const db = getSafeDbClient(supabase);
-      await db.from("user_audio_tracks").insert({
-        owner_id: user.id,
-        title: track.title,
-        artist: track.artist,
-        storage_path: track.storagePath,
-        public_url: track.src,
-        mime_type: file.type || `audio/${format}`,
-        size_bytes: file.size,
-        duration: track.duration,
-        format: track.format,
-      });
-    } catch (dbErr) {
-      // Non-fatal jika tabel belum dimigrasikan
-      console.info("Info: user_audio_tracks belum dimigrasi atau belum aktif:", dbErr);
-    }
+    // Rekam ke user_audio_tracks. supabase-js TIDAK melempar saat gagal, jadi periksa `error` secara eksplisit.
+    // Non-fatal: pustaka tetap bisa dibaca lewat agregasi playlist form jika tabel belum dimigrasikan.
+    const { error: libErr } = await supabase.from("user_audio_tracks").insert({
+      owner_id: user.id,
+      title: track.title,
+      artist: track.artist,
+      storage_path: track.storagePath,
+      public_url: track.src,
+      mime_type: MIME_BY_FORMAT[format] ?? "audio/mpeg",
+      size_bytes: file.size,
+      duration: track.duration,
+      format: track.format,
+    });
+    if (libErr) console.warn("user_audio_tracks insert gagal (apakah migrasi 0005 sudah dijalankan?):", libErr.message);
 
     return { ok: true, track };
   } catch (err: unknown) {
@@ -222,7 +172,7 @@ export async function getUserAudioLibraryAction(): Promise<UserLibraryResult> {
       return { ok: false, error: "Silakan masuk terlebih dahulu." };
     }
 
-    const db = getSafeDbClient(supabase);
+    const db = supabase; // RLS (user_audio_owner_all, forms_owner_all) membatasi ke data milik user
 
     // 1. Coba baca dari tabel user_audio_tracks
     const { data: rows, error } = await db
@@ -279,7 +229,9 @@ export async function getUserAudioLibraryAction(): Promise<UserLibraryResult> {
 }
 
 /**
- * Menghapus audio yang diunggah dari storage
+ * Menghapus audio yang diunggah dari storage.
+ * Ditolak jika berkas masih dipakai di playlist form milik user (mis. form hasil duplikasi), supaya tidak ada form yang
+ * tiba-tiba kehilangan lagunya.
  */
 export async function deleteUploadedAudioAction(storagePath: string): Promise<{ ok: boolean; error?: string }> {
   try {
@@ -292,22 +244,37 @@ export async function deleteUploadedAudioAction(storagePath: string): Promise<{ 
       return { ok: false, error: "Silakan masuk terlebih dahulu." };
     }
 
-    // Pastikan path diawali dengan user.id untuk mencegah menghapus file orang lain
-    if (!storagePath.startsWith(`${user.id}/`)) {
+    // Path harus persis `<user.id>/<nama>`: satu level, tanpa "..", "//" atau backslash (cegah menyentuh folder orang lain)
+    if (!isOwnedAudioPath(storagePath, user.id)) {
       return { ok: false, error: "Akses ditolak: berkas bukan milik Anda." };
     }
 
-    const storage = getSafeStorageClient(supabase);
-    const db = getSafeDbClient(supabase);
+    // Cek pemakaian di semua form milik user
+    const { data: forms, error: formsErr } = await supabase.from("forms").select("title,settings_json").eq("owner_id", user.id);
+    if (formsErr) return { ok: false, error: "Gagal memeriksa pemakaian lagu. Coba lagi." };
+    const usedIn = (forms ?? []).filter((f) => {
+      const playlist = (f.settings_json as { audio?: { playlist?: PlaylistTrack[] } } | null)?.audio?.playlist;
+      return Array.isArray(playlist) && playlist.some((t) => t?.storagePath === storagePath);
+    });
+    if (usedIn.length > 0) {
+      const names = usedIn
+        .slice(0, 3)
+        .map((f) => `"${(f.title as string) || "Tanpa judul"}"`)
+        .join(", ");
+      const more = usedIn.length > 3 ? ` dan ${usedIn.length - 3} form lain` : "";
+      return {
+        ok: false,
+        error: `Lagu ini masih dipakai di ${names}${more}. Hapus dari playlist form tersebut (lalu simpan), baru hapus permanen.`,
+      };
+    }
 
-    // Hapus dari Storage
-    await storage.from("form-audio").remove([storagePath]);
+    const { error: rmErr } = await supabase.storage.from("form-audio").remove([storagePath]);
+    if (rmErr) return { ok: false, error: "Gagal menghapus berkas audio." };
 
-    // Hapus dari tabel jika ada
-    await db.from("user_audio_tracks").delete().eq("storage_path", storagePath).eq("owner_id", user.id);
+    await supabase.from("user_audio_tracks").delete().eq("storage_path", storagePath).eq("owner_id", user.id);
 
     return { ok: true };
-  } catch (err) {
+  } catch {
     return { ok: false, error: "Gagal menghapus berkas audio." };
   }
 }

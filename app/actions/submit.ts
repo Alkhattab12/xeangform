@@ -10,7 +10,8 @@ import { validateAnswers } from "@/lib/forms/validate";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { serviceRoleKey } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
-import { createNotification } from "@/app/actions/notifications";
+import { createNotification } from "@/lib/notifications/create";
+import { verifyUploadedFiles } from "@/lib/forms/upload-verify";
 
 export type QuizResult = { correct: number; total: number };
 export type SubmitResult =
@@ -106,6 +107,16 @@ export async function submitResponse(slug: string, input: unknown): Promise<Subm
       .gte("submitted_at", since);
     if ((count ?? 0) >= MAX_PER_MINUTE) {
       return { ok: false, error: "Terlalu banyak pengiriman. Tunggu sebentar lalu coba lagi." };
+    }
+
+    // 5b) Verifikasi berkas unggahan: path harus milik form/kolom ini, berkas ada di storage, ukuran nyata dari storage
+    for (const field of schema.data.fields) {
+      if (field.type !== "file") continue;
+      const claimed = checked.answers[field.id];
+      if (!Array.isArray(claimed) || claimed.length === 0) continue;
+      const v = await verifyUploadedFiles(admin, form.id as string, field, claimed as UploadedFile[]);
+      if (!v.ok) return { ok: false, fieldErrors: { [field.id]: v.error } };
+      checked.answers[field.id] = v.files;
     }
 
     // 6) Penilaian kuis (di server; kunci tidak pernah keluar)

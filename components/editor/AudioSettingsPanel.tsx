@@ -861,7 +861,11 @@ export function AudioSettingsPanel({ audio, activeTheme, formId, onChange }: Pro
                               type="button"
                               onClick={async () => {
                                 if (window.confirm(`Hapus permanen "${track.title}" dari penyimpanan cloud?`)) {
-                                  await deleteUploadedAudioAction(track.storagePath!);
+                                  const res = await deleteUploadedAudioAction(track.storagePath!);
+                                  if (!res.ok) {
+                                    window.alert(res.error ?? "Gagal menghapus lagu.");
+                                    return;
+                                  }
                                   setUserLibrary((prev) => prev.filter((t) => t.id !== track.id));
                                 }
                               }}

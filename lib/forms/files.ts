@@ -17,7 +17,6 @@ export const CATEGORY_MIME_MAP: Record<FileCategory, string[]> = {
     "image/png",
     "image/webp",
     "image/gif",
-    "image/svg+xml",
   ],
   document: [
     "application/pdf",
@@ -35,7 +34,7 @@ export const CATEGORY_MIME_MAP: Record<FileCategory, string[]> = {
 
 export const CATEGORY_EXT_MAP: Record<FileCategory, string[]> = {
   pdf: [".pdf"],
-  image: [".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg"],
+  image: [".jpg", ".jpeg", ".png", ".webp", ".gif"],
   document: [".doc", ".docx", ".txt", ".rtf", ".pdf"],
   spreadsheet: [".xls", ".xlsx", ".csv"],
 };

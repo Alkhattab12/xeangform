@@ -2,13 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { mapNotificationRow, type NotificationItem, type NotificationRow, type NotificationType } from "@/lib/notifications/types";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { serviceRoleKey } from "@/lib/supabase/env";
+import { uuidV5 } from "@/lib/notifications/ids";
+import { mapNotificationRow, type NotificationItem, type NotificationRow } from "@/lib/notifications/types";
 import { createClient } from "@/lib/supabase/server";
 
 const uuidSchema = z.string().uuid();
-const typeSchema = z.enum(["form_response", "product_update", "system"]);
 
 export type NotificationsResult =
   | { ok: true; notifications: NotificationItem[]; unreadCount: number }
@@ -16,57 +14,55 @@ export type NotificationsResult =
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
-/**
- * Mendapatkan database client yang aman untuk server actions:
- * Menggunakan admin client jika service role key tersedia, atau client user biasa dengan RLS.
- */
-function getSafeDb(userClient: Awaited<ReturnType<typeof createClient>>) {
-  try {
-    if (serviceRoleKey()) {
-      return createAdminClient();
-    }
-  } catch {
-    // Gunakan userClient jika serviceRoleKey tidak tersedia
-  }
-  return userClient;
-}
+type Db = Awaited<ReturnType<typeof createClient>>;
+const SEEDED_FLAG = "notif_seeded";
 
 /**
- * Menyediakan pengumuman fitur resmi awal jika pengguna belum memiliki riwayat notifikasi.
+ * Pengumuman fitur awal. Dibuat SEKALI per akun:
+ *  - penanda `notif_seeded` disimpan di user_metadata, jadi menghapus semua notifikasi tidak memicu seed ulang;
+ *  - id baris deterministik (UUID v5) + ON CONFLICT DO NOTHING, jadi pemanggilan bersamaan tidak membuat duplikat;
+ *  - akun yang sudah punya notifikasi hanya diberi penanda (tidak ditambah baris).
+ * Tanpa migrasi database; berjalan dengan RLS user biasa.
  */
-async function seedInitialAnnouncementsIfEmpty(db: ReturnType<typeof getSafeDb>, userId: string) {
+async function seedInitialAnnouncementsOnce(db: Db, user: { id: string; user_metadata?: Record<string, unknown> }) {
   try {
-    const { count } = await db
-      .from("notifications")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", userId);
+    if (user.user_metadata?.[SEEDED_FLAG] === true) return;
+
+    const { count } = await db.from("notifications").select("id", { count: "exact", head: true }).eq("user_id", user.id);
 
     if (count === 0) {
-      await db.from("notifications").insert([
-        {
-          user_id: userId,
-          type: "product_update",
-          title: "Notification Center Aktif",
-          message:
-            "Pusat Notifikasi terpadu kini aktif untuk memantau respons formulir masuk, status publikasi, dan aktivitas penting secara real-time.",
-          link: "/dashboard",
-          metadata_json: { tag: "feature_release" },
-          is_read: false,
-        },
-        {
-          user_id: userId,
-          type: "product_update",
-          title: "Studio Audio & Nada Latar",
-          message:
-            "Kustomisasi audio latar kini mendukung pustaka multi-track, upload mandiri hingga 15 MB, dan pemutar audio interaktif untuk responden.",
-          link: "/dashboard",
-          metadata_json: { tag: "audio_release" },
-          is_read: false,
-        },
-      ]);
+      await db.from("notifications").upsert(
+        [
+          {
+            id: uuidV5(`announce:${user.id}:notification-center`),
+            user_id: user.id,
+            type: "product_update",
+            title: "Notification Center Aktif",
+            message:
+              "Pusat Notifikasi terpadu kini aktif untuk memantau respons formulir masuk, status publikasi, dan aktivitas penting secara real-time.",
+            link: "/dashboard",
+            metadata_json: { tag: "feature_release" },
+            is_read: false,
+          },
+          {
+            id: uuidV5(`announce:${user.id}:audio-studio`),
+            user_id: user.id,
+            type: "product_update",
+            title: "Studio Audio & Nada Latar",
+            message:
+              "Kustomisasi audio latar kini mendukung pustaka multi-track, upload mandiri hingga 15 MB, dan pemutar audio interaktif untuk responden.",
+            link: "/dashboard",
+            metadata_json: { tag: "audio_release" },
+            is_read: false,
+          },
+        ],
+        { onConflict: "id", ignoreDuplicates: true },
+      );
     }
+
+    await db.auth.updateUser({ data: { [SEEDED_FLAG]: true } });
   } catch {
-    // Abaikan jika tabel belum ada atau insert gagal
+    // Abaikan jika tabel belum ada atau gagal; akan dicoba lagi pada pemanggilan berikutnya
   }
 }
 
@@ -84,10 +80,9 @@ export async function getNotificationsAction(limit = 30): Promise<NotificationsR
       return { ok: false, error: "Silakan masuk terlebih dahulu.", notifications: [], unreadCount: 0 };
     }
 
-    const db = getSafeDb(supabase);
+    const db = supabase; // RLS (notifications_user_*) sudah membatasi ke baris milik user
 
-    // Cek pengumuman awal jika belum ada data sama sekali
-    await seedInitialAnnouncementsIfEmpty(db, user.id);
+    await seedInitialAnnouncementsOnce(db, user);
 
     const [listRes, countRes] = await Promise.all([
       db
@@ -141,7 +136,7 @@ export async function markNotificationAsReadAction(notificationId: string): Prom
       return { ok: false, error: "Sesi berakhir. Silakan masuk kembali." };
     }
 
-    const db = getSafeDb(supabase);
+    const db = supabase; // RLS membatasi ke baris milik user
     const { error } = await db
       .from("notifications")
       .update({
@@ -178,7 +173,7 @@ export async function markAllNotificationsAsReadAction(): Promise<ActionResult> 
       return { ok: false, error: "Sesi berakhir. Silakan masuk kembali." };
     }
 
-    const db = getSafeDb(supabase);
+    const db = supabase; // RLS membatasi ke baris milik user
     const { error } = await db
       .from("notifications")
       .update({
@@ -219,7 +214,7 @@ export async function deleteNotificationAction(notificationId: string): Promise<
       return { ok: false, error: "Sesi berakhir. Silakan masuk kembali." };
     }
 
-    const db = getSafeDb(supabase);
+    const db = supabase; // RLS membatasi ke baris milik user
     const { error } = await db
       .from("notifications")
       .delete()
@@ -236,55 +231,5 @@ export async function deleteNotificationAction(notificationId: string): Promise<
   } catch (err) {
     console.error("delete_notification_exception", err);
     return { ok: false, error: "Terjadi kesalahan sistem." };
-  }
-}
-
-/**
- * Helper sisi server untuk membuat notifikasi baru dari peristiwa sistem (misal respons formulir baru atau publikasi form).
- * Menggunakan admin client (service-role) sehingga aman dan tidak dibatasi RLS.
- */
-export async function createNotification(params: {
-  userId: string;
-  type: NotificationType;
-  title: string;
-  message: string;
-  link?: string | null;
-  metadata?: Record<string, unknown>;
-}): Promise<{ ok: boolean; id?: string }> {
-  try {
-    if (!uuidSchema.safeParse(params.userId).success) return { ok: false };
-    if (!typeSchema.safeParse(params.type).success) return { ok: false };
-
-    let admin;
-    try {
-      admin = createAdminClient();
-    } catch {
-      // Jika service role key belum disetel, lewati
-      return { ok: false };
-    }
-
-    const { data, error } = await admin
-      .from("notifications")
-      .insert({
-        user_id: params.userId,
-        type: params.type,
-        title: params.title.trim().slice(0, 200),
-        message: params.message.trim().slice(0, 1000),
-        link: params.link ? params.link.trim().slice(0, 500) : null,
-        metadata_json: params.metadata || {},
-        is_read: false,
-      })
-      .select("id")
-      .single();
-
-    if (error) {
-      console.error("create_notification_failed", error.message);
-      return { ok: false };
-    }
-
-    return { ok: true, id: data.id };
-  } catch (e) {
-    console.error("create_notification_exception", e);
-    return { ok: false };
   }
 }

@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 import { customAlphabet } from "nanoid";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { createNotification } from "@/app/actions/notifications";
+import { createNotification } from "@/lib/notifications/create";
+import { findUnsafeAudioSrc } from "@/lib/audio/safe-src";
 import { formSchemaJson, formSettingsSchema, formThemeSchema, parseSettings, publishIssues, type FormStatus } from "@/lib/forms/schema";
 
 const makeSlug = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 10);
@@ -58,6 +59,12 @@ export async function saveForm(id: string, input: unknown): Promise<SaveResult> 
 
   const { supabase, user } = await requireUser();
   if (!user) return { ok: false, error: "Sesi berakhir. Muat ulang halaman lalu masuk kembali." };
+
+  // Sumber audio hanya boleh path internal atau URL https:// (tolak http://, data:, javascript: dst.)
+  const unsafeSrc = findUnsafeAudioSrc(parsed.data.settings.audio);
+  if (unsafeSrc) {
+    return { ok: false, error: `URL audio "${unsafeSrc.slice(0, 60)}" tidak aman. Gunakan tautan https:// atau unggah file langsung.` };
+  }
 
   // Hanya kolom ini yang boleh diubah dari editor (slug/status/owner tidak bisa disusupi)
   const { data, error } = await supabase

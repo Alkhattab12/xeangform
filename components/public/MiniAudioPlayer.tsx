@@ -24,6 +24,7 @@ import {
   formatAudioTime,
   volumeToGain,
 } from "@/lib/audio/engine";
+import { isSafeAudioSrc } from "@/lib/audio/safe-src";
 import {
   resolvePlaylistTracks,
   type AudioSettings,
@@ -47,7 +48,7 @@ export function MiniAudioPlayer({
 
   // Daftar putar
   const playlist = useMemo(
-    () => resolvePlaylistTracks(audioSettings),
+    () => resolvePlaylistTracks(audioSettings).filter((t) => isSafeAudioSrc(t.src)), // abaikan http://, data:, dst.
     [audioSettings]
   );
 

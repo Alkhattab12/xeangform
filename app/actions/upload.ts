@@ -3,7 +3,9 @@
 import { customAlphabet } from "nanoid";
 import { z } from "zod";
 import { isAllowedFile } from "@/lib/forms/files";
-import { formSchemaJson, type FormField } from "@/lib/forms/schema";
+import { getClientIpHash } from "@/lib/forms/client-ip";
+import { isRateLimited } from "@/lib/forms/rate-limit";
+import { formSchemaJson, parseSettings, type FormField } from "@/lib/forms/schema";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -46,18 +48,32 @@ export async function prepareFileUpload(
   }
   const { filename, mimeType, sizeBytes } = parsedInfo.data;
 
+  // Pembatas laju dasar per IP per form (penghambat penyalahgunaan storage)
+  if (isRateLimited(`upload:${slug}:${await getClientIpHash()}`, 20, 60_000)) {
+    return { ok: false, error: "Terlalu banyak permintaan unggah. Tunggu sebentar lalu coba lagi." };
+  }
+
   try {
     const admin = createAdminClient();
 
     // 1. Periksa form yang berstatus published
     const { data: form, error: formErr } = await admin
       .from("forms")
-      .select("id,status,schema_json")
+      .select("id,status,schema_json,settings_json")
       .eq("slug", slug)
       .maybeSingle();
 
     if (formErr || !form || form.status !== "published") {
       return { ok: false, error: "Form tidak menerima respons saat ini." };
+    }
+
+    // Form yang mewajibkan login (1 respons per akun) juga mewajibkan login untuk mengunggah berkas
+    if (parseSettings(form.settings_json).oneResponsePerAccount) {
+      const sb = await createClient();
+      const {
+        data: { user },
+      } = await sb.auth.getUser();
+      if (!user) return { ok: false, error: "Masuk dulu untuk mengunggah berkas pada form ini." };
     }
 
     // 2. Periksa skema dan temukan field tipe "file"
@@ -71,7 +87,8 @@ export async function prepareFileUpload(
       return { ok: false, error: "Kolom unggah berkas tidak ditemukan." };
     }
 
-    // 3. Validasi batas ukuran berkas
+    // 3. Validasi awal ukuran (umpan balik cepat). Ukuran SEBENARNYA diverifikasi ulang di server saat respons dikirim,
+    //    karena nilai ini hanya klaim dari browser.
     const maxSizeMb = field.file?.maxSizeMb ?? 10;
     const maxBytes = maxSizeMb * 1024 * 1024;
     if (sizeBytes > maxBytes) {
@@ -118,6 +135,17 @@ export async function getFileDownloadUrl(
   formId: string,
   storagePath: string,
 ): Promise<DownloadUrlResult> {
+  // Path berkas harus berada di folder form ini (`<formId>/...`); cegah meminta berkas milik form lain
+  if (
+    !z.string().uuid().safeParse(formId).success ||
+    typeof storagePath !== "string" ||
+    !storagePath.startsWith(`${formId}/`) ||
+    storagePath.includes("..") ||
+    storagePath.length > 400
+  ) {
+    return { ok: false, error: "Berkas tidak valid." };
+  }
+
   try {
     const supabase = await createClient();
     const {
