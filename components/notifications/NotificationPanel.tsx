@@ -11,6 +11,8 @@ type NotificationPanelProps = {
   unreadCount: number;
   loading: boolean;
   error: string | null;
+  /** Posisi relatif ke pembungkus lonceng, sudah dijepit ke dalam layar. Null = belum terukur (cadangan: rata kanan). */
+  placement: { left: number; width: number } | null;
   onClose: () => void;
   onMarkAsRead: (id: string) => Promise<void>;
   onMarkAllAsRead: () => Promise<void>;
@@ -23,6 +25,7 @@ export function NotificationPanel({
   unreadCount,
   loading,
   error,
+  placement,
   onClose,
   onMarkAsRead,
   onMarkAllAsRead,
@@ -52,7 +55,8 @@ export function NotificationPanel({
       role="dialog"
       aria-label="Pusat Notifikasi"
       aria-modal="true"
-      className="absolute right-0 top-full mt-2 w-[calc(100vw-2rem)] sm:w-[420px] max-w-[420px] max-h-[75vh] flex flex-col border-[3px] border-line bg-surface shadow-[6px_6px_0_var(--shadow-color)] z-50 overflow-hidden"
+      style={placement ? { left: placement.left, width: placement.width } : { right: 0, width: "min(420px, calc(100vw - 2rem))" }}
+      className="absolute top-full mt-2 max-w-[calc(100vw-2rem)] max-h-[min(75dvh,34rem)] flex flex-col border-[3px] border-line bg-surface shadow-[6px_6px_0_var(--shadow-color)] z-50 overflow-hidden"
     >
       {/* Header */}
       <div className="flex items-center justify-between border-b-[3px] border-line bg-paper px-4 py-3">

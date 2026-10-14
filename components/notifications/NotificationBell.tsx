@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Bell } from "lucide-react";
 import { NotificationPanel } from "./NotificationPanel";
 import {
@@ -10,6 +10,7 @@ import {
   markNotificationAsReadAction,
 } from "@/app/actions/notifications";
 import { useReducedMotion } from "@/components/analytics/useReducedMotion";
+import { computePanelPlacement } from "@/lib/notifications/placement";
 import type { NotificationItem } from "@/lib/notifications/types";
 import { getBrowserClient } from "@/lib/supabase/client";
 
@@ -30,6 +31,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
   const reducedMotion = useReducedMotion();
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const [placement, setPlacement] = useState<{ left: number; width: number } | null>(null);
   const ringTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Ambil notifikasi dari server
@@ -92,6 +94,25 @@ export function NotificationBell({ userId }: NotificationBellProps) {
       supabase.removeChannel(channel);
     };
   }, [userId, loadNotifications]);
+
+  // Posisikan panel agar selalu di dalam layar (dihitung sebelum cat pertama, dan dihitung ulang saat layar berubah)
+  const updatePlacement = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setPlacement(computePanelPlacement(rect.left, rect.right, document.documentElement.clientWidth));
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    updatePlacement();
+    window.addEventListener("resize", updatePlacement);
+    window.addEventListener("orientationchange", updatePlacement);
+    return () => {
+      window.removeEventListener("resize", updatePlacement);
+      window.removeEventListener("orientationchange", updatePlacement);
+    };
+  }, [isOpen, updatePlacement]);
 
   // Tutup panel jika klik di luar atau tekan tombol Escape
   useEffect(() => {
@@ -211,6 +232,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
           unreadCount={unreadCount}
           loading={loading}
           error={error}
+          placement={placement}
           onClose={() => setIsOpen(false)}
           onMarkAsRead={handleMarkAsRead}
           onMarkAllAsRead={handleMarkAllAsRead}
