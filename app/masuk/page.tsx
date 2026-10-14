@@ -5,7 +5,11 @@ import { LoginForm } from "@/components/auth/forms";
 
 export const metadata: Metadata = { title: "Masuk" };
 
-export default async function MasukPage({ searchParams }: { searchParams: Promise<{ next?: string; error?: string }> }) {
+export default async function MasukPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string; error?: string; verified?: string; email?: string }>;
+}) {
   const sp = await searchParams;
   return (
     <AuthShell
@@ -23,7 +27,12 @@ export default async function MasukPage({ searchParams }: { searchParams: Promis
         </>
       }
     >
-      <LoginForm next={sp.next} linkError={sp.error === "tautan"} />
+      <LoginForm
+        next={sp.next}
+        errorCode={sp.error}
+        verified={sp.verified === "1"}
+        initialEmail={sp.email}
+      />
     </AuthShell>
   );
 }

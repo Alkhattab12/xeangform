@@ -277,3 +277,96 @@ h1, h2, h3, h4 {
     scroll-behavior: auto !important;
   }
 }
+
+/* ================= Background Animasi Global (Mode Gerak & Diam) ================= */
+.bg-mesh-container {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  pointer-events: none;
+  z-index: -1;
+  overflow: hidden;
+  background-color: var(--bg);
+}
+
+.bg-dot-pattern {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(color-mix(in srgb, var(--fg) 14%, transparent) 1px, transparent 1px);
+  background-size: 24px 24px;
+  opacity: 0.6;
+}
+
+:root[data-theme="dark"] .bg-dot-pattern {
+  opacity: 0.25;
+}
+
+.bg-orb-cobalt {
+  position: absolute;
+  top: -15%;
+  left: -10%;
+  width: 60vw;
+  height: 60vw;
+  max-width: 750px;
+  max-height: 750px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--cobalt) 18%, transparent) 0%, color-mix(in srgb, var(--lime) 10%, transparent) 60%, transparent 80%);
+  filter: blur(65px);
+  will-change: transform;
+}
+
+.bg-orb-accent {
+  position: absolute;
+  bottom: -20%;
+  right: -10%;
+  width: 65vw;
+  height: 65vw;
+  max-width: 800px;
+  max-height: 800px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--lavender) 22%, transparent) 0%, color-mix(in srgb, var(--orange) 10%, transparent) 60%, transparent 80%);
+  filter: blur(75px);
+  will-change: transform;
+}
+
+/* Animasi mode gerak */
+[data-bg-mode="motion"] .bg-orb-cobalt {
+  animation: bg-cobalt-drift 22s cubic-bezier(0.4, 0, 0.2, 1) infinite alternate;
+}
+
+[data-bg-mode="motion"] .bg-orb-accent {
+  animation: bg-accent-drift 26s cubic-bezier(0.4, 0, 0.2, 1) infinite alternate;
+}
+
+@keyframes bg-cobalt-drift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(8vw, 10vh, 0) scale(1.1);
+  }
+  100% {
+    transform: translate3d(-5vw, 6vh, 0) scale(0.95);
+  }
+}
+
+@keyframes bg-accent-drift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(-10vw, -8vh, 0) scale(1.12);
+  }
+  100% {
+    transform: translate3d(6vw, -4vh, 0) scale(0.92);
+  }
+}
+
+/* Mode Diam: hentikan semua animasi nonesensial secara total */
+[data-bg-mode="static"] .bg-orb-cobalt,
+[data-bg-mode="static"] .bg-orb-accent,
+[data-bg-mode="static"] .bg-motion-elem {
+  animation: none !important;
+}
+

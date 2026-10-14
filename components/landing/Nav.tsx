@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Logo } from "@/components/brand/Logo";
+import { BackgroundToggle } from "@/components/background/BackgroundToggle";
 
 const links = [
   { href: "#fitur", label: "Fitur" },
@@ -24,6 +25,7 @@ export function Nav() {
         </nav>
 
         <div className="flex items-center gap-3">
+          <BackgroundToggle />
           <Link href="/masuk" className="hidden px-2 py-2 font-display font-bold underline-offset-4 hover:underline md:inline">
             Masuk
           </Link>

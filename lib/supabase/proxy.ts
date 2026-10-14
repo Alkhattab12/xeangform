@@ -31,7 +31,17 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
+  const isEmailConfirmed = Boolean(user?.email_confirmed_at || user?.confirmed_at);
   const path = request.nextUrl.pathname;
+
+  if (user && !isEmailConfirmed && path.startsWith("/dashboard")) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/masuk";
+    url.search = "";
+    url.searchParams.set("error", "email_belum_dikonfirmasi");
+    if (user.email) url.searchParams.set("email", user.email);
+    return NextResponse.redirect(url);
+  }
 
   if (!user && path.startsWith("/dashboard")) {
     const url = request.nextUrl.clone();
@@ -41,7 +51,7 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (user && (path === "/masuk" || path === "/daftar")) {
+  if (user && isEmailConfirmed && (path === "/masuk" || path === "/daftar")) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     url.search = "";

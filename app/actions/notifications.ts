@@ -66,6 +66,10 @@ async function seedInitialAnnouncementsOnce(db: Db, user: { id: string; user_met
   }
 }
 
+function isVerified(user: { email_confirmed_at?: string | null; confirmed_at?: string | null } | null): boolean {
+  return Boolean(user && (user.email_confirmed_at || user.confirmed_at));
+}
+
 /**
  * Mengambil daftar notifikasi pengguna terbaru beserta jumlah belum dibaca.
  */
@@ -76,8 +80,8 @@ export async function getNotificationsAction(limit = 30): Promise<NotificationsR
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user) {
-      return { ok: false, error: "Silakan masuk terlebih dahulu.", notifications: [], unreadCount: 0 };
+    if (!user || !isVerified(user)) {
+      return { ok: false, error: "Silakan masuk dan konfirmasi email terlebih dahulu.", notifications: [], unreadCount: 0 };
     }
 
     const db = supabase; // RLS (notifications_user_*) sudah membatasi ke baris milik user
@@ -132,8 +136,8 @@ export async function markNotificationAsReadAction(notificationId: string): Prom
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user) {
-      return { ok: false, error: "Sesi berakhir. Silakan masuk kembali." };
+    if (!user || !isVerified(user)) {
+      return { ok: false, error: "Sesi berakhir atau email belum dikonfirmasi." };
     }
 
     const db = supabase; // RLS membatasi ke baris milik user
@@ -169,8 +173,8 @@ export async function markAllNotificationsAsReadAction(): Promise<ActionResult> 
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user) {
-      return { ok: false, error: "Sesi berakhir. Silakan masuk kembali." };
+    if (!user || !isVerified(user)) {
+      return { ok: false, error: "Sesi berakhir atau email belum dikonfirmasi." };
     }
 
     const db = supabase; // RLS membatasi ke baris milik user
@@ -210,8 +214,8 @@ export async function deleteNotificationAction(notificationId: string): Promise<
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user) {
-      return { ok: false, error: "Sesi berakhir. Silakan masuk kembali." };
+    if (!user || !isVerified(user)) {
+      return { ok: false, error: "Sesi berakhir atau email belum dikonfirmasi." };
     }
 
     const db = supabase; // RLS membatasi ke baris milik user

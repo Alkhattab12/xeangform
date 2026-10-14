@@ -21,6 +21,9 @@ async function requireUser() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  if (user && !user.email_confirmed_at && !user.confirmed_at) {
+    return { supabase, user: null };
+  }
   return { supabase, user };
 }
 

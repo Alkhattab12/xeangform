@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Fredoka, IBM_Plex_Mono, Inter, Lora, Orbitron, Space_Grotesk } from "next/font/google";
+import { BackgroundProvider } from "@/components/background/BackgroundContext";
+import { GlobalBackground } from "@/components/background/GlobalBackground";
 import { LoadingProvider } from "@/components/ui/LoadingProvider";
 import "./globals.css";
 
@@ -25,9 +27,12 @@ const fontVars = [display, sans, mono, rounded, serif, futuristic].map((f) => f.
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="id" className={fontVars}>
+    <html lang="id" className={fontVars} data-bg-mode="motion">
       <body>
-        <LoadingProvider>{children}</LoadingProvider>
+        <BackgroundProvider>
+          <GlobalBackground />
+          <LoadingProvider>{children}</LoadingProvider>
+        </BackgroundProvider>
       </body>
     </html>
   );
