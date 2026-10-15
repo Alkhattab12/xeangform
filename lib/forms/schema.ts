@@ -259,6 +259,9 @@ export const THEME_PRESETS = ["unik", "keren", "abstrak", "neo", "imut", "cookin
 export type ThemePreset = (typeof THEME_PRESETS)[number];
 export const DECOR_KEYS = ["none", "dots", "grid", "stars", "shapes", "strata", "cells", "bubbles"] as const;
 export type DecorKey = (typeof DECOR_KEYS)[number];
+/** Mode gerak tema: "diam" (bawaan, statis) atau "dinamis" (latar dan elemen dekoratif bergerak). */
+export const THEME_MOTIONS = ["diam", "dinamis"] as const;
+export type ThemeMotion = (typeof THEME_MOTIONS)[number];
 
 /** Tema form (disimpan di forms.theme_json). Kosong ({}) = tampilan bawaan. */
 export const formThemeSchema = z.object({
@@ -272,6 +275,7 @@ export const formThemeSchema = z.object({
   shadow: z.number().int().min(0).max(12).optional(),
   font: z.enum(FONT_KEYS).optional(),
   decor: z.enum(DECOR_KEYS).optional(),
+  motion: z.enum(THEME_MOTIONS).optional(),
 });
 export type FormTheme = z.infer<typeof formThemeSchema>;
 

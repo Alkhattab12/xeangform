@@ -5,7 +5,6 @@ import { BackgroundToggle } from "@/components/background/BackgroundToggle";
 import { Logo } from "@/components/brand/Logo";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { getSessionUser } from "@/lib/auth/session";
-import { signOut } from "@/app/actions/auth";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await getSessionUser();
@@ -19,9 +18,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             <Logo size={36} wordmarkClassName="hidden min-[420px]:inline" />
           </Link>
           <div className="flex items-center gap-3">
-            <div className="hidden sm:block">
-              <BackgroundToggle />
-            </div>
+            <BackgroundToggle />
             <NotificationBell userId={session.user.id} />
             <Link
               href="/dashboard/akun"
@@ -32,9 +29,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
               <UserRound className="h-5 w-5" aria-hidden="true" />
               <span className="nb-mono hidden max-w-[10rem] truncate sm:inline">{session.displayName}</span>
             </Link>
-            <form action={signOut}>
-              <button type="submit" className="nb-btn nb-btn-ghost">Keluar</button>
-            </form>
           </div>
         </div>
       </header>

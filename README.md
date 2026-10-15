@@ -13,7 +13,8 @@ Setup Supabase/Vercel (konfirmasi email, redirect URL, SMTP, env): lihat [`docs/
 ## Peta kode
 - `app/actions/*` server action (auth, akun, form, respons, upload, audio, notifikasi). Semua yang privat memeriksa `getVerifiedUser()`.
 - `lib/auth/*` helper autentikasi (status verifikasi, callback, origin aman). `lib/supabase/proxy.ts` melindungi `/dashboard`.
-- `components/background/*` background global gerak/diam (`lib/background/mode.ts`, CSS `.xf-bg*` di `globals.css`).
+- `components/background/*` background global gerak/diam (`lib/background/mode.ts`, CSS `.xf-bg*` di `globals.css`). Tombol ✦ di header mengubahnya; tombol Keluar ada di halaman Akun.
+- Mode dinamis tema form: `theme.motion = "dinamis"` (`lib/forms/theme.ts`, `components/public/ThemeScope.tsx` + `DynamicDecor.tsx`, CSS `.xf-dyn*`). Berlaku di editor dan form publik; berhenti saat mode diam / kurangi gerakan.
 - `supabase/migrations/*` skema; jalankan berurutan.
 
 ## Pengujian
@@ -24,8 +25,10 @@ npx tsx --tsconfig tsconfig.json lib/background/selftest.ts
 npx tsx --tsconfig tsconfig.json lib/notifications/selftest.ts
 npx tsx --tsconfig tsconfig.json lib/audio/selftest.ts
 npx tsx --tsconfig tsconfig.json lib/analytics/selftest.ts
+npx tsx --tsconfig tsconfig.json lib/forms/selftest-theme.ts
 NODE_OPTIONS=--conditions=react-server npx tsx --tsconfig tsconfig.json lib/forms/selftest-security.ts
 next build && bash scripts/e2e-smoke.sh
+# uji visual di browser: lihat scripts/visual/README.md
 ```
 
 ## Aturan kerja

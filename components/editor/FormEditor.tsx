@@ -30,6 +30,7 @@ import { FieldLibrary } from "./FieldLibrary";
 import { FieldPreview } from "./FieldPreview";
 import { FieldSettings } from "./FieldSettings";
 import { FormSettingsPanel } from "./FormSettingsPanel";
+import { DynamicDecor } from "@/components/public/DynamicDecor";
 import { ThemePanel } from "./ThemePanel";
 import { AudioSettingsPanel } from "./AudioSettingsPanel";
 import { DEFAULT_AUDIO_SETTINGS } from "@/lib/forms/schema";
@@ -346,7 +347,9 @@ export function FormEditor({ initial }: { initial: Initial }) {
   }
 
   const show = (t: Tab) => `${tab === t ? "block" : "hidden"} lg:block`;
-  const canvasStyle = theme ? themeStyle(resolveTheme(theme)) : undefined;
+  const resolvedTheme = theme ? resolveTheme(theme) : null;
+  const canvasStyle = resolvedTheme ? themeStyle(resolvedTheme) : undefined;
+  const dynamicCanvas = resolvedTheme?.motion === "dinamis";
   const pageInfo = (() => {
     let p = 1;
     const nums: number[] = [];
@@ -424,7 +427,13 @@ export function FormEditor({ initial }: { initial: Initial }) {
           <FieldLibrary onAdd={addField} />
         </aside>
 
-        <section aria-label="Kanvas form" className={`${show("canvas")} ${theme ? "p-3" : ""}`} style={canvasStyle}>
+        <section
+          aria-label="Kanvas form"
+          className={`${show("canvas")} ${theme ? "p-3" : ""} ${dynamicCanvas ? "xf-dyn" : ""}`}
+          data-decor={dynamicCanvas ? resolvedTheme?.decor : undefined}
+          style={canvasStyle}
+        >
+          {dynamicCanvas && <DynamicDecor />}
           <div className="nb-panel nb-panel-strong nb-shadow p-5">
             <label htmlFor="form-title" className="sr-only">Judul form</label>
             <input

@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { DecorKey, FieldStyle, FontKey, FormTheme, ThemePreset } from "./schema";
+import type { DecorKey, FieldStyle, FontKey, FormTheme, ThemeMotion, ThemePreset } from "./schema";
 
 export type Tokens = {
   bg: string; surface: string; fg: string; line: string; shadowColor: string;
@@ -7,7 +7,7 @@ export type Tokens = {
   radius: number; border: number; shadow: number;
   font: FontKey; decor: DecorKey;
 };
-export type Resolved = Tokens & { onAccent: string; danger: string };
+export type Resolved = Tokens & { onAccent: string; danger: string; motion: ThemeMotion };
 
 export const PRESETS: Record<ThemePreset, { name: string; blurb: string; tokens: Tokens }> = {
   unik: {
@@ -97,7 +97,7 @@ export function resolveTheme(theme: FormTheme): Resolved {
   if (theme.shadow !== undefined) t.shadow = theme.shadow;
   if (theme.font) t.font = theme.font;
   if (theme.decor) t.decor = theme.decor;
-  return { ...t, onAccent: onColor(t.accent), danger: pickDanger(t.surface) };
+  return { ...t, onAccent: onColor(t.accent), danger: pickDanger(t.surface), motion: theme.motion ?? "diam" };
 }
 
 // ---------- huruf ----------
@@ -159,8 +159,45 @@ export function decorStyle(t: Tokens): CSSProperties {
   }
 }
 
+// ---------- mode dinamis: dekorasi latar bergerak (hanya transform, tanpa repaint berat) ----------
+// Pola yang berulang digeser tepat sejauh satu petak (loop mulus). Pola bentuk tunggal melayang pelan.
+const DECOR_MOTION: Record<DecorKey, { x: number; y: number; sec: number } | "float" | null> = {
+  none: null,
+  dots: { x: 22, y: 22, sec: 5 },
+  grid: { x: 30, y: 30, sec: 7 },
+  stars: { x: 260, y: 240, sec: 45 },
+  strata: { x: 0, y: 44, sec: 9 },
+  cells: { x: 260, y: 260, sec: 32 },
+  shapes: "float",
+  bubbles: "float",
+};
+
+/** Variabel CSS yang dibaca `.xf-dyn::before` (lihat globals.css) agar dekorasi tema bergerak di lapisannya sendiri. */
+export function decorMotionVars(t: Tokens): Record<string, string> {
+  const m = DECOR_MOTION[t.decor];
+  const d = decorStyle(t);
+  if (!m) return { "--xf-decor-image": "none", "--xf-decor-anim": "none" };
+  const base: Record<string, string> = {
+    "--xf-decor-image": String(d.backgroundImage ?? "none"),
+    "--xf-decor-size": String(d.backgroundSize ?? "auto"),
+    "--xf-decor-repeat": String(d.backgroundRepeat ?? "repeat"),
+  };
+  if (m === "float") {
+    return { ...base, "--xf-pad-x": "0px", "--xf-pad-y": "0px", "--xf-decor-anim": "xf-float 9s ease-in-out -3s infinite alternate" };
+  }
+  return {
+    ...base,
+    "--xf-pad-x": `${m.x}px`,
+    "--xf-pad-y": `${m.y}px`,
+    "--xf-tile-x": `${m.x}px`,
+    "--xf-tile-y": `${m.y}px`,
+    "--xf-decor-anim": `xf-pan ${m.sec}s linear infinite`,
+  };
+}
+
 /** Variabel CSS untuk satu halaman/kanvas bertema. */
 export function themeStyle(r: Resolved): CSSProperties {
+  const dynamic = r.motion === "dinamis";
   const btn = Math.max(0, Math.round(r.shadow * 0.8));
   return {
     "--bg": r.bg,
@@ -169,6 +206,7 @@ export function themeStyle(r: Resolved): CSSProperties {
     "--line": r.line,
     "--shadow-color": r.shadowColor,
     "--accent": r.accent,
+    "--accent-2": r.accent2,
     "--on-accent": r.onAccent,
     "--danger": r.danger,
     "--bw": `${r.border}px`,
@@ -182,7 +220,8 @@ export function themeStyle(r: Resolved): CSSProperties {
     background: r.bg,
     color: r.fg,
     fontFamily: BODY_FONT[r.font],
-    ...decorStyle(r),
+    // Statis: dekorasi langsung di latar. Dinamis: dekorasi dilukis `.xf-dyn::before` yang bergerak.
+    ...(dynamic ? decorMotionVars(r) : decorStyle(r)),
   } as unknown as CSSProperties;
 }
 

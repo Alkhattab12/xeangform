@@ -322,7 +322,7 @@ PROPERTI KOLOM:
 KUIS & PENGATURAN (opsional):
 - Di "form" boleh ada "settings": {"quiz": true, "allowTabSwitch": false, "oneResponsePerAccount": true}
   quiz = dinilai otomatis; allowTabSwitch false = pindah tab/jendela dideteksi; oneResponsePerAccount = 1 akun hanya 1 kali mengisi.
-- "form" juga boleh punya "theme": {"preset": "galaxy"}. Pilihan preset: unik, keren, abstrak, neo, imut, cooking, galaxy, kebumian, biologi, sosial.
+- "form" juga boleh punya "theme": {"preset": "galaxy"}. Tambahkan "motion": "dinamis" agar latar dan hiasan tema bergerak (bawaan: "diam"). Pilihan preset: unik, keren, abstrak, neo, imut, cooking, galaxy, kebumian, biologi, sosial.
 - Kunci jawaban pakai "correct" di dalam kolom:
   radio atau dropdown: teks opsi yang benar, HARUS sama persis dengan salah satu isi "options". Contoh "correct": "XI"
   checkbox: daftar teks opsi yang benar. Contoh "correct": ["Musik","Olahraga"]

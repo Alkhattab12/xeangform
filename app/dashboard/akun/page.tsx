@@ -1,9 +1,11 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { ArrowLeft, BadgeCheck, KeyRound, Mail, Palette, UserRound } from "lucide-react";
+import { ArrowLeft, BadgeCheck, KeyRound, LogOut, Mail, Palette, UserRound } from "lucide-react";
 import { EmailForm, PasswordForm, ProfileForm } from "@/components/account/AccountForms";
 import { BackgroundToggle } from "@/components/background/BackgroundToggle";
+import { signOut } from "@/app/actions/auth";
+import { SubmitButton } from "@/components/auth/SubmitButton";
 import { getSessionUser } from "@/lib/auth/session";
 
 export const metadata: Metadata = { title: "Akun" };
@@ -81,6 +83,13 @@ export default async function AkunPage({ searchParams }: { searchParams: Promise
       <Section icon={<Palette className="h-5 w-5" />} title="Tampilan">
         <p className="mb-5 leading-relaxed">Pilih apakah latar aplikasi bergerak halus atau diam. Pilihanmu tersimpan di perangkat ini.</p>
         <BackgroundToggle variant="full" />
+      </Section>
+
+      <Section icon={<LogOut className="h-5 w-5" />} title="Keluar">
+        <p className="mb-5 leading-relaxed">Akhiri sesi di perangkat ini. Kamu perlu masuk lagi untuk membuka dashboard.</p>
+        <form action={signOut}>
+          <SubmitButton pendingLabel="Keluar…">Keluar dari akun</SubmitButton>
+        </form>
       </Section>
     </main>
   );

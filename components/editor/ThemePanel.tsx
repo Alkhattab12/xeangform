@@ -1,6 +1,8 @@
 "use client";
 
 import { useId } from "react";
+import { useBackground } from "@/components/background/BackgroundProvider";
+import { DynamicDecor } from "@/components/public/DynamicDecor";
 import { DECOR_KEYS, FONT_KEYS, THEME_PRESETS, type DecorKey, type FormTheme } from "@/lib/forms/schema";
 import { FONT_LABEL, PRESETS, contrast, resolveTheme, themeStyle } from "@/lib/forms/theme";
 
@@ -41,6 +43,8 @@ export function ThemePanel({ theme, onChange }: Props) {
   const fontId = useId();
   const decorId = useId();
   const r = theme ? resolveTheme(theme) : null;
+  const { effective } = useBackground();
+  const dynamicOn = r?.motion === "dinamis";
 
   const set = (patch: Partial<FormTheme>) => {
     if (!theme) return;
@@ -78,7 +82,7 @@ export function ThemePanel({ theme, onChange }: Props) {
               type="button"
               aria-pressed={active}
               title={p.blurb}
-              onClick={() => onChange({ preset: k })}
+              onClick={() => onChange({ preset: k, ...(theme?.motion ? { motion: theme.motion } : {}) })} /* mode dinamis ikut terbawa saat ganti tema */
               className={`nb-panel flex min-h-14 flex-col items-start justify-center gap-1 px-3 py-2 text-left ${active ? "nb-shadow outline-3 outline-offset-2 outline-solid outline-cobalt" : ""}`}
             >
               <span className="font-display font-bold">{p.name}</span>
@@ -96,7 +100,8 @@ export function ThemePanel({ theme, onChange }: Props) {
         <>
           <div>
             <p className="nb-mono mb-2">Pratinjau</p>
-            <div style={themeStyle(r)} className="border-2 border-line p-3" aria-hidden="true">
+            <div style={themeStyle(r)} className={`border-2 border-line p-3 ${dynamicOn ? "xf-dyn" : ""}`} data-decor={dynamicOn ? r.decor : undefined} aria-hidden="true">
+              {dynamicOn && <DynamicDecor />}
               <p className="font-display text-xl font-bold">Judul form</p>
               <div className="nb-panel nb-shadow mt-2 p-3" style={{ borderRadius: "var(--radius)" }}>
                 <p className="mb-2 text-sm font-bold">Contoh pertanyaan *</p>
@@ -104,6 +109,28 @@ export function ThemePanel({ theme, onChange }: Props) {
               </div>
               <span className="nb-btn mt-3 inline-flex min-h-10 px-3 py-2 text-sm">Kirim</span>
             </div>
+          </div>
+
+          <div className="space-y-2 border-t-2 border-line pt-4">
+            <p className="nb-mono">Gerakan</p>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={dynamicOn}
+              onClick={() => set({ motion: dynamicOn ? undefined : "dinamis" })}
+              className={`nb-btn w-full justify-between ${dynamicOn ? "" : "nb-btn-ghost"}`}
+            >
+              <span>Mode dinamis</span>
+              <span className="nb-mono">{dynamicOn ? "AKTIF" : "MATI"}</span>
+            </button>
+            <p className="text-sm leading-relaxed">
+              Latar dan hiasan mengikuti tema ({DECOR_LABEL[r.decor]}) bergerak halus; kartu soal masuk bertahap. Responden yang memilih &quot;kurangi gerakan&quot; di perangkatnya tidak melihat animasi.
+            </p>
+            {dynamicOn && effective === "diam" && (
+              <p role="status" className="border-2 border-line bg-lavender p-2 text-sm font-bold text-ink">
+                Animasi latar di perangkatmu sedang DIAM, jadi pratinjau tidak bergerak. Ketuk tombol ✦ di header untuk menyalakannya.
+              </p>
+            )}
           </div>
 
           <div className="space-y-4 border-t-2 border-line pt-4">
@@ -134,7 +161,7 @@ export function ThemePanel({ theme, onChange }: Props) {
                 {DECOR_KEYS.map((k) => (<option key={k} value={k}>{DECOR_LABEL[k]}</option>))}
               </select>
             </div>
-            <button type="button" onClick={() => onChange({ preset: theme.preset })} className={mini}>Reset kustomisasi</button>
+            <button type="button" onClick={() => onChange({ preset: theme.preset, ...(theme.motion ? { motion: theme.motion } : {}) })} className={mini}>Reset kustomisasi</button>
           </div>
         </>
       )}

@@ -282,11 +282,11 @@ h1, h2, h3, h4 {
    Mode dipilih lewat atribut <html data-bg-motion="gerak|diam"> (lihat lib/background/mode.ts).
    Hanya transform + opacity yang dianimasikan (tanpa layout/paint berat, tanpa filter blur). */
 :root {
-  --xf-bg-strength: 0.55;
+  --xf-bg-strength: 0.8;
 }
-:root[data-theme="dark"] { --xf-bg-strength: 0.22; }
+:root[data-theme="dark"] { --xf-bg-strength: 0.32; }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --xf-bg-strength: 0.22; }
+  :root:not([data-theme="light"]) { --xf-bg-strength: 0.32; }
 }
 
 .xf-bg {
@@ -305,15 +305,17 @@ h1, h2, h3, h4 {
   opacity: var(--xf-bg-strength);
   will-change: transform;
 }
-.xf-bg-blob-a { left: -22vmax; top: -26vmax; background: radial-gradient(circle, color-mix(in srgb, var(--lime) 70%, transparent), transparent 68%); animation: xf-drift-a 42s ease-in-out infinite alternate; }
-.xf-bg-blob-b { right: -26vmax; top: 8vmax; background: radial-gradient(circle, color-mix(in srgb, var(--lavender) 75%, transparent), transparent 68%); animation: xf-drift-b 51s ease-in-out infinite alternate; }
-.xf-bg-blob-c { left: 8vmax; bottom: -34vmax; background: radial-gradient(circle, color-mix(in srgb, var(--cobalt) 38%, transparent), transparent 68%); animation: xf-drift-c 47s ease-in-out infinite alternate; }
-.xf-bg-blob-d { right: 10vmax; bottom: -30vmax; width: 44vmax; height: 44vmax; background: radial-gradient(circle, color-mix(in srgb, var(--orange) 45%, transparent), transparent 68%); animation: xf-drift-d 38s ease-in-out infinite alternate; }
+.xf-bg-blob-a { left: -22vmax; top: -26vmax; background: radial-gradient(circle, color-mix(in srgb, var(--lime) 70%, transparent), transparent 68%); animation: xf-drift-a 18s ease-in-out -6s infinite alternate; }
+.xf-bg-blob-b { right: -26vmax; top: 8vmax; background: radial-gradient(circle, color-mix(in srgb, var(--lavender) 75%, transparent), transparent 68%); animation: xf-drift-b 22s ease-in-out -8s infinite alternate; }
+.xf-bg-blob-c { left: 8vmax; bottom: -34vmax; background: radial-gradient(circle, color-mix(in srgb, var(--cobalt) 38%, transparent), transparent 68%); animation: xf-drift-c 20s ease-in-out -7s infinite alternate; }
+.xf-bg-blob-d { right: 10vmax; bottom: -30vmax; width: 44vmax; height: 44vmax; background: radial-gradient(circle, color-mix(in srgb, var(--orange) 45%, transparent), transparent 68%); animation: xf-drift-d 16s ease-in-out -5s infinite alternate; }
 
-/* Pola titik halus khas neo-brutalist; statis di kedua mode */
+/* Pola titik halus khas neo-brutalist; bergeser pelan di mode gerak, statis di mode diam */
 .xf-bg-grid {
   position: absolute;
-  inset: 0;
+  inset: -24px; /* lebih besar dari layar agar bisa digeser satu petak tanpa tepi kosong */
+  animation: xf-grid-pan 6s linear infinite; /* bergerak hanya di mode gerak */
+  will-change: transform;
   background-image: radial-gradient(color-mix(in srgb, var(--fg) 16%, transparent) 1px, transparent 1.4px);
   background-size: 24px 24px;
   opacity: 0.55;
@@ -334,18 +336,140 @@ h1, h2, h3, h4 {
   will-change: transform;
 }
 
-@keyframes xf-drift-a { to { transform: translate3d(14vmax, 10vmax, 0) scale(1.12); } }
-@keyframes xf-drift-b { to { transform: translate3d(-12vmax, 12vmax, 0) scale(0.92); } }
-@keyframes xf-drift-c { to { transform: translate3d(12vmax, -10vmax, 0) scale(1.1); } }
-@keyframes xf-drift-d { to { transform: translate3d(-10vmax, -8vmax, 0) scale(1.15); } }
+@keyframes xf-drift-a { to { transform: translate3d(30vmax, 22vmax, 0) scale(1.25); } }
+@keyframes xf-drift-b { to { transform: translate3d(-28vmax, 24vmax, 0) scale(0.85); } }
+@keyframes xf-drift-c { to { transform: translate3d(26vmax, -22vmax, 0) scale(1.2); } }
+@keyframes xf-drift-d { to { transform: translate3d(-24vmax, -18vmax, 0) scale(1.3); } }
+@keyframes xf-grid-pan { to { transform: translate3d(24px, 24px, 0); } }
 
 /* Mode diam: animasi BENAR-BENAR dihentikan (bukan sekadar diperlambat) */
-html[data-bg-motion="diam"] .xf-bg-blob { animation: none !important; will-change: auto; }
+html[data-bg-motion="diam"] .xf-bg-blob, html[data-bg-motion="diam"] .xf-bg-grid { animation: none !important; will-change: auto; }
 html[data-bg-motion="diam"] .xf-bg-glow { display: none; }
 /* Tab tidak terlihat: jeda */
-html[data-bg-hidden="1"] .xf-bg-blob { animation-play-state: paused; }
+html[data-bg-hidden="1"] .xf-bg-blob, html[data-bg-hidden="1"] .xf-bg-grid { animation-play-state: paused; }
 /* Preferensi sistem "kurangi gerakan" selalu menang */
 @media (prefers-reduced-motion: reduce) {
-  .xf-bg-blob { animation: none !important; will-change: auto; }
+  .xf-bg-blob, .xf-bg-grid { animation: none !important; will-change: auto; }
   .xf-bg-glow { display: none; }
+}
+
+/* Animasi latar sengaja memakai delay negatif: begitu dinyalakan, gerakannya langsung terlihat (tidak mulai dari fase lambat). */
+/* Tombol ✦ latar: keadaan aktif (gerak) berwarna aksen supaya beda jelas dengan diam */
+.nb-bell-btn.nb-toggle-on { background: var(--accent); color: var(--on-accent, #171717); }
+.xf-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+  z-index: 60;
+  translate: -50% 0;
+  max-width: calc(100vw - 2rem);
+  padding: 0.6rem 1rem;
+  border: var(--bw-strong) solid var(--line);
+  background: var(--surface);
+  color: var(--fg);
+  font-weight: 700;
+  box-shadow: 4px 4px 0 var(--shadow-color);
+  animation: xf-toast 2.2s ease both;
+  pointer-events: none;
+}
+@keyframes xf-toast {
+  0% { opacity: 0; transform: translate3d(0, 12px, 0); }
+  12%, 82% { opacity: 1; transform: translate3d(0, 0, 0); }
+  100% { opacity: 0; transform: translate3d(0, 8px, 0); }
+}
+
+/* ================= Mode dinamis pada tema form =================
+   Dipasang oleh <ThemeScope> / kanvas editor (class .xf-dyn, atribut data-decor = dekorasi tema).
+   Latar tema dilukis di ::before dan digeser dengan transform; bentuk melayang (.xf-dyn-shape) ikut warna tema;
+   kartu masuk bertahap dan terangkat saat disentuh. Semuanya berhenti saat mode diam / kurangi gerakan. */
+.xf-dyn { position: relative; isolation: isolate; overflow: clip; }
+.xf-dyn::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  inset: calc(var(--xf-pad-y, 0px) * -1) calc(var(--xf-pad-x, 0px) * -1);
+  background-image: var(--xf-decor-image, none);
+  background-size: var(--xf-decor-size, auto);
+  background-repeat: var(--xf-decor-repeat, repeat);
+  animation: var(--xf-decor-anim, none);
+  will-change: transform;
+}
+.xf-dyn-shapes {
+  position: absolute; inset: 0; z-index: -1; overflow: clip; pointer-events: none;
+  /* Di HP kartu hampir selebar layar: bentuk dibuat menyembul di tepi (negatif). Di layar lebar bergeser ke margin kosong. */
+  --xf-edge: clamp(-34px, calc(50% - 28rem), 7%);
+}
+.xf-dyn-shape { position: absolute; display: block; background: var(--accent); opacity: 0.7; will-change: transform; }
+.xf-dyn-shape-1 { left: var(--xf-edge); top: 6%; width: 84px; height: 84px; border-radius: 50%; animation: xf-bob-a 11s ease-in-out -4s infinite alternate; }
+.xf-dyn-shape-2 { right: var(--xf-edge); top: 12%; width: 64px; height: 64px; border-radius: calc(var(--radius, 0px) + 6px); background: var(--accent-2, var(--accent)); animation: xf-bob-b 13s ease-in-out -4s infinite alternate; }
+.xf-dyn-shape-3 { left: calc(var(--xf-edge) - 6px); top: 38%; width: 56px; height: 56px; border-radius: 50%; background: transparent; border: 7px solid var(--accent-2, var(--accent)); animation: xf-bob-c 9s ease-in-out -4s infinite alternate; }
+.xf-dyn-shape-4 { right: calc(var(--xf-edge) - 4px); top: 50%; width: 76px; height: 76px; clip-path: polygon(50% 0, 100% 100%, 0 100%); animation: xf-spin 26s linear infinite; }
+.xf-dyn-shape-5 { left: var(--xf-edge); top: 70%; width: 104px; height: 104px; border-radius: 50%; background: var(--accent-2, var(--accent)); opacity: 0.45; animation: xf-bob-a 15s ease-in-out -4s infinite alternate; }
+.xf-dyn-shape-6 { right: var(--xf-edge); top: 88%; width: 60px; height: 60px; border-radius: 50%; background: transparent; border: 7px solid var(--accent); animation: xf-bob-b 12s ease-in-out -4s infinite alternate; }
+
+/* Cahaya (aurora) berwarna aksen tema di belakang semuanya: terlihat di sela dan tepi kartu, bergeser pelan */
+.xf-dyn::after {
+  content: "";
+  position: absolute;
+  inset: -15%;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 18% 24%, color-mix(in srgb, var(--accent) 55%, transparent), transparent 40%),
+    radial-gradient(circle at 82% 66%, color-mix(in srgb, var(--accent-2, var(--accent)) 50%, transparent), transparent 42%);
+  background-size: 100% 110vh;
+  background-repeat: repeat-y;
+  animation: xf-aurora 14s ease-in-out -5s infinite alternate;
+  will-change: transform;
+}
+
+/* Variasi bentuk mengikuti dekorasi tema */
+/* Bintang kecil (22px) tidak boleh didorong keluar layar seperti bentuk besar: tepinya hanya sedikit di dalam */
+.xf-dyn[data-decor="stars"] .xf-dyn-shapes { --xf-edge: clamp(2px, calc(50% - 26rem), 9%); }
+.xf-dyn[data-decor="stars"] .xf-dyn-shape { width: 22px; height: 22px; border: 0; border-radius: 0; background: var(--accent); clip-path: polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); animation: xf-twinkle 3.2s ease-in-out -4s infinite alternate; }
+.xf-dyn[data-decor="stars"] .xf-dyn-shape:nth-child(even) { background: var(--accent-2, var(--accent)); animation-duration: 4.4s; width: 16px; height: 16px; }
+.xf-dyn[data-decor="bubbles"] .xf-dyn-shape, .xf-dyn[data-decor="cells"] .xf-dyn-shape { border-radius: 50%; clip-path: none; animation: xf-bubble 12s ease-in-out -4s infinite alternate; }
+.xf-dyn[data-decor="grid"] .xf-dyn-shape, .xf-dyn[data-decor="dots"] .xf-dyn-shape { border-radius: 0; clip-path: none; animation: xf-bob-c 10s ease-in-out -4s infinite alternate; }
+.xf-dyn[data-decor="strata"] .xf-dyn-shape { height: 14px; border-radius: 0; clip-path: none; width: 120px; animation: xf-slide 14s ease-in-out -4s infinite alternate; }
+
+@keyframes xf-aurora { from { transform: translate3d(-4%, -2%, 0) scale(1); } to { transform: translate3d(5%, 3%, 0) scale(1.1); } }
+@keyframes xf-pan { to { transform: translate3d(var(--xf-tile-x, 0px), var(--xf-tile-y, 0px), 0); } }
+@keyframes xf-float { from { transform: translate3d(-2%, -1.5%, 0) scale(1); } to { transform: translate3d(3%, 3%, 0) scale(1.08); } }
+@keyframes xf-bob-a { to { transform: translate3d(34px, -42px, 0) rotate(14deg); } }
+@keyframes xf-bob-b { to { transform: translate3d(-40px, 36px, 0) rotate(-22deg); } }
+@keyframes xf-bob-c { to { transform: translate3d(28px, 30px, 0) rotate(90deg); } }
+@keyframes xf-spin { to { transform: rotate(360deg); } }
+@keyframes xf-twinkle { from { transform: scale(0.6) rotate(0deg); opacity: 0.25; } to { transform: scale(1.15) rotate(25deg); opacity: 0.9; } }
+@keyframes xf-bubble { from { transform: translate3d(0, 0, 0) scale(1); } to { transform: translate3d(14px, -70px, 0) scale(1.15); } }
+@keyframes xf-slide { to { transform: translate3d(90px, 0, 0); } }
+@keyframes xf-rise { from { opacity: 0; transform: translate3d(0, 18px, 0) scale(0.985); } to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); } }
+@keyframes xf-pulse { 50% { scale: 1.035; } }
+
+/* Kartu: masuk bertahap (fill backwards: setelah selesai tidak mengunci transform) dan terangkat saat disentuh */
+.xf-dyn .nb-panel { animation: xf-rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; transition: translate 0.25s ease; }
+.xf-dyn .nb-panel:nth-child(2) { animation-delay: 0.07s; }
+.xf-dyn .nb-panel:nth-child(3) { animation-delay: 0.14s; }
+.xf-dyn .nb-panel:nth-child(4) { animation-delay: 0.21s; }
+.xf-dyn .nb-panel:nth-child(5) { animation-delay: 0.28s; }
+.xf-dyn .nb-panel:nth-child(6) { animation-delay: 0.35s; }
+.xf-dyn .nb-panel:nth-child(n + 7) { animation-delay: 0.42s; }
+.xf-dyn .nb-panel:hover, .xf-dyn .nb-panel:focus-within { translate: 0 -3px; }
+/* Hanya form publik: tombol utama berdenyut pelan, judul masuk dengan efek naik */
+.xf-dyn-live .nb-btn:not(.nb-btn-ghost):not(:disabled) { animation: xf-pulse 2.8s ease-in-out infinite; }
+.xf-dyn-live h1 { animation: xf-rise 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+
+/* Mode diam / kurangi gerakan / tab tersembunyi: semua animasi dinamis dihentikan atau dijeda */
+html[data-bg-motion="diam"] .xf-dyn::before,
+html[data-bg-motion="diam"] .xf-dyn::after,
+html[data-bg-motion="diam"] .xf-dyn-shape,
+html[data-bg-motion="diam"] .xf-dyn .nb-panel,
+html[data-bg-motion="diam"] .xf-dyn-live .nb-btn,
+html[data-bg-motion="diam"] .xf-dyn-live h1 { animation: none !important; will-change: auto; }
+html[data-bg-motion="diam"] .xf-dyn .nb-panel:hover, html[data-bg-motion="diam"] .xf-dyn .nb-panel:focus-within { translate: none; }
+html[data-bg-hidden="1"] .xf-dyn::before, html[data-bg-hidden="1"] .xf-dyn::after, html[data-bg-hidden="1"] .xf-dyn-shape, html[data-bg-hidden="1"] .xf-dyn-live .nb-btn { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  .xf-dyn::before, .xf-dyn::after, .xf-dyn-shape, .xf-dyn .nb-panel, .xf-dyn-live .nb-btn, .xf-dyn-live h1 { animation: none !important; will-change: auto; }
+  .xf-dyn .nb-panel:hover, .xf-dyn .nb-panel:focus-within { translate: none; }
+  .xf-toast { animation: none !important; opacity: 1; } /* tetap terbaca; dihapus oleh timer komponen */
 }
