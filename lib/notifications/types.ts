@@ -1,4 +1,4 @@
-export type NotificationType = "form_response" | "product_update" | "system";
+export type NotificationType = "form_response" | "product_update" | "system" | "proctoring_violation";
 
 export type NotificationItem = {
   id: string;

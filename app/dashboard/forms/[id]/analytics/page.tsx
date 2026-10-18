@@ -55,6 +55,7 @@ export default async function AnalyticsPage({ params, searchParams }: { params: 
       <Link href="/dashboard" className="underline underline-offset-4">← Dashboard</Link>
       <Link href={`/dashboard/forms/${id}/responses`} className="underline underline-offset-4">Respons</Link>
       <Link href={`/dashboard/forms/${id}`} className="underline underline-offset-4">Editor form</Link>
+      <Link href={`/dashboard/forms/${id}/violations`} className="underline underline-offset-4">Pengawasan</Link>
     </nav>
   );
 

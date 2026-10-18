@@ -3,7 +3,7 @@ import { uuidSchemaLoose } from "./ids";
 import type { NotificationType } from "./types";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-const TYPES: NotificationType[] = ["form_response", "product_update", "system"];
+const TYPES: NotificationType[] = ["form_response", "product_update", "system", "proctoring_violation"];
 
 /**
  * Membuat notifikasi dari peristiwa sistem (respons baru, form terbit).

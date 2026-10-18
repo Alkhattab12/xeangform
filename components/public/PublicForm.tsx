@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { submitResponse, type QuizResult } from "@/app/actions/submit";
 import { useBusyOverlay } from "@/components/ui/LoadingProvider";
 import { firstErrorFieldId, pageIndexOf, splitPages } from "@/lib/forms/pages";
 import { isInputType, type FormField, type FormSettings } from "@/lib/forms/schema";
+import { DEFAULT_PROCTORING_SETTINGS } from "@/lib/forms/schema";
 import { fieldStyleVars, labelSizeClass } from "@/lib/forms/theme";
 import { OTHER, validateAnswers } from "@/lib/forms/validate";
 import { MiniAudioPlayer } from "./MiniAudioPlayer";
@@ -13,6 +14,8 @@ import type { ThemePreset } from "@/lib/forms/schema";
 import { GateCard } from "./GateCard";
 import { FileUploadField } from "./FileUploadField";
 import type { UploadedFile } from "@/lib/forms/files";
+import { ShieldAlert, AlertTriangle, Maximize2 } from "lucide-react";
+import { initProctoringSession, recordProctoringViolation } from "@/app/actions/proctoring";
 
 type Props = {
   slug: string;
@@ -24,7 +27,7 @@ type Props = {
 };
 type ChoiceAnswer = { optionId?: string; other?: string };
 type MultiAnswer = { optionIds?: string[]; other?: string };
-type Status = "idle" | "submitting" | "done" | "already" | "login";
+type Status = "idle" | "submitting" | "done" | "already" | "login" | "blocked";
 
 const TEXT_INPUTS: Record<string, { type: string; inputMode?: "text" | "decimal" | "email" | "tel" | "url"; autoComplete?: string }> = {
   short_text: { type: "text" },
@@ -56,7 +59,10 @@ function focusField(fid: string) {
 }
 
 export function PublicForm({ slug, title, description, fields, settings, themePreset }: Props) {
-  const enforce = !settings.allowTabSwitch;
+  const proctoring = settings.proctoring ?? DEFAULT_PROCTORING_SETTINGS;
+  const isProctoring = Boolean(proctoring.enabled);
+  const enforce = !settings.allowTabSwitch || isProctoring;
+
   const pages = useMemo(() => splitPages(fields), [fields]);
   const [pageIdx, setPageIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
@@ -73,40 +79,214 @@ export function PublicForm({ slug, title, description, fields, settings, themePr
   const isLast = pageIdx >= pages.length - 1;
   const current = pages[Math.min(pageIdx, pages.length - 1)];
 
-  // ---- Deteksi pindah tab / minimize (hanya jika "Tidak boleh") ----
+  // Sesi ujian & pengawasan
+  const [examStarted, setExamStarted] = useState(!isProctoring);
   const [vCount, setVCount] = useState(0);
-  const [warn, setWarn] = useState(false);
+  const [warningModal, setWarningModal] = useState<{
+    show: boolean;
+    count: number;
+    max: number;
+    title: string;
+    message: string;
+  } | null>(null);
   const countRef = useRef(0);
-  const events = useRef<{ k: "tab" | "window"; t: string }[]>([]);
+  const events = useRef<{ k: string; t: string }[]>([]);
   const lastAt = useRef(0);
   const okRef = useRef<HTMLButtonElement>(null);
 
+  // Inisialisasi session key peserta & verifikasi status awal dari server
   useEffect(() => {
-    if (!enforce || status === "done") return;
-    const record = (k: "tab" | "window") => {
+    if (typeof window === "undefined") return;
+    const storageKey = `xean_session_${slug}`;
+    let k = sessionStorage.getItem(storageKey);
+    if (!k) {
+      k = crypto.randomUUID();
+      sessionStorage.setItem(storageKey, k);
+    }
+    keyRef.current = k;
+
+    if (isProctoring) {
+      const alreadyStarted = sessionStorage.getItem(`xean_started_${slug}`) === "true";
+      if (alreadyStarted) setExamStarted(true);
+
+      void initProctoringSession(slug, k).then((res) => {
+        if (res.ok && res.enabled) {
+          if (res.isBlocked) {
+            setStatus("blocked");
+            setVCount(res.violationCount ?? res.maxViolations ?? 3);
+          } else if (typeof res.violationCount === "number") {
+            setVCount(res.violationCount);
+            countRef.current = res.violationCount;
+          }
+        }
+      });
+    }
+  }, [slug, isProctoring]);
+
+  // Melaporkan pelanggaran secara otoritatif ke backend dengan deduplikasi (cooldown 3 detik)
+  const reportViolation = useCallback(
+    async (type: string, description: string) => {
+      if (!isProctoring || !examStarted || status === "done" || status === "blocked") return;
       const now = Date.now();
-      if (now - lastAt.current < 1000) return; // satu perpindahan memicu beberapa event; hitung sekali
+      if (now - lastAt.current < 3000) return; // Cooldown 3 detik: cegah event ganda dari 1 aksi fisik
       lastAt.current = now;
-      countRef.current += 1;
-      if (events.current.length < 50) events.current.push({ k, t: new Date(now).toISOString() });
-      setVCount(countRef.current);
-      setWarn(true);
-    };
-    const onVisibility = () => {
-      if (document.hidden) record("tab");
-    };
-    const onBlur = () => record("window");
-    document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("blur", onBlur);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("blur", onBlur);
-    };
-  }, [enforce, status]);
+
+      const currentKey = keyRef.current || crypto.randomUUID();
+      keyRef.current = currentKey;
+
+      if (events.current.length < 50) {
+        events.current.push({ k: type, t: new Date(now).toISOString() });
+      }
+
+      try {
+        const res = await recordProctoringViolation(slug, currentKey, type, description);
+        if (res.ok) {
+          const c = res.violationCount;
+          const max = res.maxViolations;
+          countRef.current = c;
+          setVCount(c);
+
+          if (res.isBlocked) {
+            setStatus("blocked");
+            setWarningModal(null);
+          } else {
+            const title =
+              c === 1
+                ? `PERINGATAN 1/${max} — AKTIVITAS TIDAK DIIZINKAN`
+                : `PERINGATAN TERAKHIR ${c}/${max} — RISIKO PEMBLOKIRAN`;
+            const msg =
+              c === 1
+                ? "Anda terdeteksi melakukan aktivitas yang melanggar aturan keamanan form, seperti berpindah tab atau meninggalkan mode pengerjaan. Harap kembali fokus pada form dan jangan mengulangi aktivitas tersebut. Pelanggaran berikutnya akan dicatat oleh sistem."
+                : `Sistem telah mencatat dua pelanggaran selama pengerjaan Anda. Apabila terjadi satu pelanggaran valid lagi, sesi pengerjaan akan dihentikan secara otomatis dan Anda tidak dapat melanjutkan form menggunakan percobaan ini.`;
+
+            setWarningModal({ show: true, count: c, max, title, message: msg });
+          }
+        } else if (res.blocked) {
+          setStatus("blocked");
+          setWarningModal(null);
+        }
+      } catch (err) {
+        console.error("proctoring_client_report_failed", err);
+      }
+    },
+    [isProctoring, examStarted, status, slug]
+  );
+
+  // Event listener pengawasan browser (Tab switch, window blur, fullscreen exit, navigasi, copy/paste)
+  useEffect(() => {
+    if (!enforce || status === "done" || status === "blocked") return;
+
+    if (isProctoring) {
+      if (!examStarted) return;
+
+      const onVisibility = () => {
+        if (document.hidden && proctoring.detectTabSwitch) {
+          void reportViolation("tab_switch", "Berpindah ke tab browser lain");
+        }
+      };
+
+      const onBlur = () => {
+        if (proctoring.detectWindowBlur) {
+          void reportViolation("window_blur", "Jendela browser kehilangan fokus aktif");
+        }
+      };
+
+      const onFullscreenChange = () => {
+        if (proctoring.requireFullscreen && proctoring.detectFullscreenExit) {
+          if (!document.fullscreenElement) {
+            void reportViolation("fullscreen_exit", "Keluar dari mode layar penuh (fullscreen)");
+          }
+        }
+      };
+
+      const preventClipboard = (e: Event) => {
+        if (proctoring.restrictCopyPaste) {
+          e.preventDefault();
+        }
+      };
+
+      const onBeforeUnload = (e: BeforeUnloadEvent) => {
+        if (proctoring.detectNavigation) {
+          e.preventDefault();
+          e.returnValue = "";
+        }
+      };
+
+      document.addEventListener("visibilitychange", onVisibility);
+      window.addEventListener("blur", onBlur);
+      document.addEventListener("fullscreenchange", onFullscreenChange);
+      window.addEventListener("beforeunload", onBeforeUnload);
+
+      if (proctoring.restrictCopyPaste) {
+        document.addEventListener("copy", preventClipboard);
+        document.addEventListener("cut", preventClipboard);
+        document.addEventListener("paste", preventClipboard);
+        document.addEventListener("contextmenu", preventClipboard);
+      }
+
+      return () => {
+        document.removeEventListener("visibilitychange", onVisibility);
+        window.removeEventListener("blur", onBlur);
+        document.removeEventListener("fullscreenchange", onFullscreenChange);
+        window.removeEventListener("beforeunload", onBeforeUnload);
+
+        if (proctoring.restrictCopyPaste) {
+          document.removeEventListener("copy", preventClipboard);
+          document.removeEventListener("cut", preventClipboard);
+          document.removeEventListener("paste", preventClipboard);
+          document.removeEventListener("contextmenu", preventClipboard);
+        }
+      };
+    } else {
+      // Fallback mode kompatibilitas lama
+      const recordLegacy = (k: "tab" | "window") => {
+        const now = Date.now();
+        if (now - lastAt.current < 1000) return;
+        lastAt.current = now;
+        countRef.current += 1;
+        if (events.current.length < 50) events.current.push({ k, t: new Date(now).toISOString() });
+        setVCount(countRef.current);
+        setWarningModal({
+          show: true,
+          count: countRef.current,
+          max: 3,
+          title: "Kamu meninggalkan halaman ini",
+          message: "Form ini tidak mengizinkan berpindah tab atau meminimalkan jendela. Pelanggaran dicatat.",
+        });
+      };
+      const onVis = () => {
+        if (document.hidden) recordLegacy("tab");
+      };
+      const onB = () => recordLegacy("window");
+      document.addEventListener("visibilitychange", onVis);
+      window.addEventListener("blur", onB);
+      return () => {
+        document.removeEventListener("visibilitychange", onVis);
+        window.removeEventListener("blur", onB);
+      };
+    }
+  }, [enforce, isProctoring, examStarted, status, proctoring, reportViolation]);
 
   useEffect(() => {
-    if (warn) okRef.current?.focus();
-  }, [warn]);
+    if (warningModal?.show) okRef.current?.focus();
+  }, [warningModal]);
+
+  const startExam = async () => {
+    if (proctoring.requireFullscreen && typeof document !== "undefined") {
+      try {
+        await document.documentElement.requestFullscreen();
+      } catch {
+        // Abaikan jika browser membatasi permintaan fullscreen
+      }
+    }
+    const currentKey = keyRef.current || crypto.randomUUID();
+    keyRef.current = currentKey;
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem(`xean_started_${slug}`, "true");
+    }
+    setExamStarted(true);
+    void initProctoringSession(slug, currentKey);
+  };
 
   // Setelah pindah halaman: fokus ke soal bermasalah (jika ada), kalau tidak gulir ke atas
   useEffect(() => {
@@ -202,6 +382,10 @@ export function PublicForm({ slug, title, description, fields, settings, themePr
         setStatus("done");
         return;
       }
+      if (res.blocked) {
+        setStatus("blocked");
+        return;
+      }
       if (res.alreadySubmitted) {
         setStatus("already");
         return;
@@ -235,8 +419,91 @@ export function PublicForm({ slug, title, description, fields, settings, themePr
     setStatus("idle");
   }
 
+  if (status === "blocked") {
+    return (
+      <GateCard
+        kind="blocked"
+        slug={slug}
+        title={title}
+        violationCount={vCount}
+        maxViolations={proctoring.maxViolations}
+      />
+    );
+  }
   if (status === "already") return <GateCard kind="done" slug={slug} title={title} score={null} />;
   if (status === "login") return <GateCard kind="login" slug={slug} title={title} />;
+
+  // Layar Briefing / Persetujuan Ujian sebelum pengerjaan dimulai
+  if (proctoring.enabled && !examStarted) {
+    return (
+      <div className="nb-panel nb-panel-strong nb-shadow space-y-6 p-6 sm:p-8">
+        <div className="flex items-center gap-3 text-orange">
+          <ShieldAlert size={32} strokeWidth={2.5} aria-hidden="true" />
+          <h1 className="font-display text-2xl sm:text-3xl font-bold text-ink">
+            Pengawasan Ujian & Anti-Cheating
+          </h1>
+        </div>
+        <div className="border-l-4 border-orange pl-4 space-y-2 text-ink">
+          <p className="font-bold">Formulir &quot;{title}&quot; mengaktifkan sistem pengawasan keamanan.</p>
+          <p className="text-sm leading-relaxed text-ink/80">
+            Sistem memantau aktivitas pengerjaan Anda dan otomatis mendiskualifikasi sesi jika terdeteksi aktivitas kecurangan berulang.
+          </p>
+        </div>
+
+        <div className="nb-panel p-4 bg-paper/60 space-y-3">
+          <p className="nb-mono text-xs uppercase tracking-wider font-bold">Aturan Selama Pengerjaan Ujian:</p>
+          <ul className="space-y-2 text-sm text-ink">
+            {proctoring.detectTabSwitch && (
+              <li className="flex items-start gap-2">
+                <span className="text-orange font-bold">•</span>
+                <span><strong>Dilarang berpindah tab browser</strong>: Meninggalkan tab ujian akan dicatat sebagai pelanggaran.</span>
+              </li>
+            )}
+            {proctoring.detectWindowBlur && (
+              <li className="flex items-start gap-2">
+                <span className="text-orange font-bold">•</span>
+                <span><strong>Fokus jendela penuh</strong>: Dilarang beralih ke aplikasi lain (Alt-Tab atau meminimalkan jendela).</span>
+              </li>
+            )}
+            {proctoring.requireFullscreen && (
+              <li className="flex items-start gap-2">
+                <span className="text-orange font-bold">•</span>
+                <span><strong>Mode layar penuh wajib</strong>: Menekan tombol Esc atau keluar dari fullscreen akan dicatat.</span>
+              </li>
+            )}
+            {proctoring.restrictCopyPaste && (
+              <li className="flex items-start gap-2">
+                <span className="text-orange font-bold">•</span>
+                <span><strong>Salin-tempel dibatasi</strong>: Aksi copy, paste, dan klik kanan dinonaktifkan di area pengerjaan.</span>
+              </li>
+            )}
+            <li className="flex items-start gap-2 pt-2 border-t border-line/30">
+              <span className="text-[#c62f00] font-bold">⚠</span>
+              <span className="font-bold text-[#c62f00]">
+                Batas Pelanggaran: Maksimal {proctoring.maxViolations} kali pelanggaran valid sebelum akses Anda diblokir otomatis.
+              </span>
+            </li>
+          </ul>
+        </div>
+
+        <div className="pt-2">
+          <button
+            type="button"
+            onClick={startExam}
+            className="nb-btn nb-btn-lg w-full flex items-center justify-center gap-2"
+          >
+            {proctoring.requireFullscreen ? (
+              <>
+                <Maximize2 size={18} aria-hidden="true" /> Masuk Layar Penuh & Mulai Ujian
+              </>
+            ) : (
+              <>Saya Mengerti & Mulai Pengerjaan →</>
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (status === "done") {
     return (
@@ -543,10 +810,21 @@ export function PublicForm({ slug, title, description, fields, settings, themePr
 
         {enforce && (
           <div role="note" className="nb-panel border-[3px] bg-lavender p-5 text-ink">
-            <p className="font-display font-bold">Pengawasan aktif</p>
-            <p className="mt-2 leading-relaxed">
-              Jangan berpindah tab atau meminimalkan jendela selama mengisi. Pelanggaran dicatat dan dapat dilihat pembuat form.
-              {vCount > 0 ? ` Tercatat: ${vCount} kali.` : ""}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="text-orange shrink-0" size={20} aria-hidden="true" />
+                <p className="font-display font-bold">
+                  {isProctoring ? "Pengawasan Anti-Cheating & Tab Lock Aktif" : "Pengawasan Aktif"}
+                </p>
+              </div>
+              <span className="nb-mono text-xs border-2 border-line px-2 py-0.5 bg-surface font-bold">
+                Pelanggaran: {vCount}/{proctoring.maxViolations}
+              </span>
+            </div>
+            <p className="mt-2 text-sm leading-relaxed text-ink/90">
+              {isProctoring
+                ? `Tetap fokus pada form ini. Berpindah tab, meminimalkan jendela, atau keluar dari fullscreen akan dicatat. Melebihi ${proctoring.maxViolations} kali pelanggaran akan otomatis memblokir sesi Anda.`
+                : "Jangan berpindah tab atau meminimalkan jendela selama mengisi. Pelanggaran dicatat dan dapat dilihat pembuat form."}
             </p>
           </div>
         )}
@@ -598,14 +876,40 @@ export function PublicForm({ slug, title, description, fields, settings, themePr
         />
       )}
 
-      {enforce && warn && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="alertdialog" aria-modal="true" aria-labelledby="warn-title" aria-describedby="warn-desc">
-          <div className="nb-panel nb-panel-strong nb-shadow w-full max-w-md bg-orange p-6 text-ink">
-            <h2 id="warn-title" className="font-display text-2xl font-bold">Kamu meninggalkan halaman ini</h2>
-            <p id="warn-desc" className="mt-4 leading-relaxed">
-              Form ini tidak mengizinkan berpindah tab atau meminimalkan jendela. Pelanggaran dicatat. Total saat ini: {vCount} kali.
+      {warningModal?.show && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="warn-title"
+          aria-describedby="warn-desc"
+        >
+          <div className="nb-panel nb-panel-strong nb-shadow w-full max-w-lg bg-orange p-6 text-ink border-4 border-ink">
+            <div className="flex items-center gap-2 mb-2">
+              <AlertTriangle size={24} className="shrink-0 text-ink" aria-hidden="true" />
+              <span className="nb-mono text-xs uppercase tracking-wider font-bold">
+                Pemberitahuan Sistem Keamanan
+              </span>
+            </div>
+            <h2 id="warn-title" className="font-display text-2xl sm:text-3xl font-bold leading-tight">
+              {warningModal.title}
+            </h2>
+            <p id="warn-desc" className="mt-4 leading-relaxed font-medium">
+              {warningModal.message}
             </p>
-            <button ref={okRef} type="button" onClick={() => setWarn(false)} className="nb-btn nb-btn-ink mt-6">Mengerti, lanjutkan</button>
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t-2 border-line/40 pt-4">
+              <span className="nb-mono font-bold text-sm">
+                Pelanggaran: {warningModal.count} dari {warningModal.max}
+              </span>
+              <button
+                ref={okRef}
+                type="button"
+                onClick={() => setWarningModal(null)}
+                className="nb-btn nb-btn-ink"
+              >
+                Mengerti, Kembali ke Form
+              </button>
+            </div>
           </div>
         </div>
       )}

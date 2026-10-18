@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Check, FileText, Sparkles, Bell, Trash2, ArrowRight } from "lucide-react";
+import { Check, FileText, Sparkles, Bell, Trash2, ArrowRight, ShieldAlert } from "lucide-react";
 import { formatRelativeTime, NOTIFICATION_CONFIG } from "@/lib/notifications/format";
 import type { NotificationItem } from "@/lib/notifications/types";
 
@@ -26,6 +26,8 @@ export function NotificationItemView({
         return <FileText className="h-4 w-4" strokeWidth={2.5} />;
       case "product_update":
         return <Sparkles className="h-4 w-4" strokeWidth={2.5} />;
+      case "proctoring_violation":
+        return <ShieldAlert className="h-4 w-4" strokeWidth={2.5} />;
       case "system":
       default:
         return <Bell className="h-4 w-4" strokeWidth={2.5} />;

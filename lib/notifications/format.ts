@@ -55,4 +55,10 @@ export const NOTIFICATION_CONFIG: Record<
     iconBg: "bg-orange text-ink",
     borderTone: "border-orange",
   },
+  proctoring_violation: {
+    label: "Pelanggaran Ujian",
+    badgeTone: "bg-[#c62f00] text-white",
+    iconBg: "bg-[#c62f00] text-white",
+    borderTone: "border-[#c62f00]",
+  },
 };

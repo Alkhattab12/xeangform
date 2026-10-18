@@ -235,10 +235,38 @@ export function resolvePlaylistTracks(audio: AudioSettings): PlaylistTrack[] {
   ];
 }
 
+export const proctoringSettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+  detectTabSwitch: z.boolean().default(true),
+  detectWindowBlur: z.boolean().default(true),
+  requireFullscreen: z.boolean().default(false),
+  detectFullscreenExit: z.boolean().default(true),
+  detectNavigation: z.boolean().default(true),
+  restrictCopyPaste: z.boolean().default(false),
+  maxViolations: z.number().int().min(1).max(10).default(3),
+  notifyOwnerOnViolation: z.boolean().default(true),
+  autoSubmitOnDisqualify: z.boolean().default(true),
+});
+export type ProctoringSettings = z.infer<typeof proctoringSettingsSchema>;
+
+export const DEFAULT_PROCTORING_SETTINGS: ProctoringSettings = {
+  enabled: false,
+  detectTabSwitch: true,
+  detectWindowBlur: true,
+  requireFullscreen: false,
+  detectFullscreenExit: true,
+  detectNavigation: true,
+  restrictCopyPaste: false,
+  maxViolations: 3,
+  notifyOwnerOnViolation: true,
+  autoSubmitOnDisqualify: true,
+};
+
 /** Pengaturan tingkat form (disimpan di forms.settings_json). */
 export const formSettingsSchema = z.object({
   quiz: z.boolean().default(false),
   allowTabSwitch: z.boolean().default(true),
+  proctoring: proctoringSettingsSchema.default(DEFAULT_PROCTORING_SETTINGS),
   oneResponsePerAccount: z.boolean().default(false),
   audio: audioSettingsSchema.default(DEFAULT_AUDIO_SETTINGS),
 });
@@ -246,13 +274,24 @@ export type FormSettings = z.infer<typeof formSettingsSchema>;
 export const DEFAULT_SETTINGS: FormSettings = {
   quiz: false,
   allowTabSwitch: true,
+  proctoring: DEFAULT_PROCTORING_SETTINGS,
   oneResponsePerAccount: false,
   audio: DEFAULT_AUDIO_SETTINGS,
 };
 
 export function parseSettings(v: unknown): FormSettings {
   const r = formSettingsSchema.safeParse(v ?? {});
-  return r.success ? r.data : DEFAULT_SETTINGS;
+  const res = r.success ? r.data : { ...DEFAULT_SETTINGS };
+  // Kompatibilitas mundur: jika allowTabSwitch = false namun proctoring belum disetel khusus
+  if (v && typeof v === "object" && "allowTabSwitch" in v && (v as { allowTabSwitch?: boolean }).allowTabSwitch === false) {
+    if (!res.proctoring.enabled) {
+      res.proctoring = { ...res.proctoring, enabled: true };
+    }
+  }
+  if (res.proctoring.enabled) {
+    res.allowTabSwitch = false;
+  }
+  return res;
 }
 
 export const THEME_PRESETS = ["unik", "keren", "abstrak", "neo", "imut", "cooking", "galaxy", "kebumian", "biologi", "sosial"] as const;

@@ -17,7 +17,14 @@ import { verifyUploadedFiles } from "@/lib/forms/upload-verify";
 export type QuizResult = { correct: number; total: number };
 export type SubmitResult =
   | { ok: true; result?: QuizResult }
-  | { ok: false; error?: string; fieldErrors?: Record<string, string>; needsLogin?: boolean; alreadySubmitted?: boolean };
+  | {
+      ok: false;
+      error?: string;
+      fieldErrors?: Record<string, string>;
+      needsLogin?: boolean;
+      alreadySubmitted?: boolean;
+      blocked?: boolean;
+    };
 
 const slugSchema = z.string().regex(/^[a-z0-9-]{6,64}$/);
 const payloadSchema = z.object({
@@ -27,7 +34,7 @@ const payloadSchema = z.object({
   violations: z
     .object({
       count: z.number().int().min(0).max(10000),
-      events: z.array(z.object({ k: z.enum(["tab", "window"]), t: z.string().max(40) })).max(50),
+      events: z.array(z.object({ k: z.string().max(40), t: z.string().max(40) })).max(100),
     })
     .optional(),
 });
@@ -68,6 +75,26 @@ export async function submitResponse(slug: string, input: unknown): Promise<Subm
       .eq("metadata_json->>client_key", payload.data.clientKey)
       .limit(1);
     if (dup && dup.length > 0) return { ok: true, result: settings.quiz ? scoreOf(dup[0].metadata_json) : undefined };
+
+    // 2b) Proteksi Anti-Cheating: tolak jika sesi ujian diblokir di server
+    if (settings.proctoring?.enabled) {
+      const { data: procSession } = await admin
+        .from("proctoring_sessions")
+        .select("id,status,violation_count,max_violations")
+        .eq("form_id", form.id)
+        .eq("session_key", payload.data.clientKey)
+        .maybeSingle();
+
+      if (procSession) {
+        if (procSession.status === "blocked" || procSession.violation_count >= procSession.max_violations) {
+          return {
+            ok: false,
+            blocked: true,
+            error: "Sesi ujian Anda telah dihentikan dan diblokir karena mencapai batas maksimal pelanggaran.",
+          };
+        }
+      }
+    }
 
     // 3) Pembatasan 1 respons per akun (wajib login)
     let respondent: { id: string; email: string | null; name: string | null } | null = null;
@@ -211,6 +238,20 @@ export async function submitResponse(slug: string, input: unknown): Promise<Subm
         });
       } catch (notifErr) {
         console.error("submit_notification_failed", notifErr);
+      }
+
+      // 10) Tandai sesi pengawasan ujian sebagai selesai (completed)
+      if (settings.proctoring?.enabled) {
+        try {
+          await admin
+            .from("proctoring_sessions")
+            .update({ status: "completed", ended_at: new Date().toISOString() })
+            .eq("form_id", form.id)
+            .eq("session_key", payload.data.clientKey)
+            .eq("status", "in_progress");
+        } catch (procErr) {
+          console.error("complete_proctoring_session_failed", procErr);
+        }
       }
     }
 
