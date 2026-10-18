@@ -28,7 +28,7 @@ npx tsx --tsconfig tsconfig.json lib/analytics/selftest.ts
 npx tsx --tsconfig tsconfig.json lib/forms/selftest-theme.ts
 NODE_OPTIONS=--conditions=react-server npx tsx --tsconfig tsconfig.json lib/forms/selftest-security.ts
 next build && bash scripts/e2e-smoke.sh
-# uji visual di browser: lihat scripts/visual/README.md
+# uji visual di browser (dashboard, editor, Analitik, Respons, ekspor): lihat scripts/visual/README.md
 ```
 
 ## Aturan kerja

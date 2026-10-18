@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { gradeQuiz } from "@/lib/forms/grade";
 import type { FormField } from "@/lib/forms/schema";
-import { analyze, changes, questionAccumulations, detectGroupField, previousRange, questionDetail, scoreSubmissions, selectResponses, summarize, type RawSubmission } from "./compute";
+import { analyze, byTime, changes, questionAccumulations, detectGroupField, previousRange, questionDetail, scoreSubmissions, selectResponses, summarize, type RawSubmission } from "./compute";
 import { parseAnalyticsFilters } from "./filters";
 
 const opt = (id: string, label: string) => ({ id, label });
@@ -187,5 +187,21 @@ assert.equal(a.timeline.reduce((x, t) => x + t.n, 0), a.summary.responses);
 assert.deepEqual(a.statusCounts, [{ status: "received", label: "Diterima", count: 5 }]);
 const withSpam = analyze(selectResponses(scored, { ...f, status: "spam" }), fields, { ...f, status: "spam" });
 assert.deepEqual(withSpam.statusCounts, [{ status: "spam", label: "Spam", count: 1 }]);
+
+// ---- urutan waktu: pecahan detik tidak boleh membalik urutan (regresi localeCompare)
+{
+  const early = "2026-10-01T05:00:00+00:00";
+  const late = "2026-10-01T05:00:00.5+00:00";
+  assert.ok(byTime(early, late) < 0 && byTime(late, early) > 0, "waktu tanpa pecahan lebih awal dari yang berpecahan");
+  assert.deepEqual([late, early].sort(byTime), [early, late]);
+  const sub = (id: string, at: string): RawSubmission => ({ id, submitted_at: at, status: "received", answers: {}, respondentId: "p1", meta: {} });
+  const sc = scoreSubmissions([], [sub("B", late), sub("A", early)], null);
+  const first = selectResponses(sc, { ...f, attempt: "pertama" }).map((r) => r.id);
+  const last = selectResponses(sc, { ...f, attempt: "terakhir" }).map((r) => r.id);
+  assert.deepEqual(first, ["A"], "percobaan pertama = yang lebih awal");
+  assert.deepEqual(last, ["B"], "percobaan terakhir = yang lebih akhir");
+  const an = analyze(sc, [], f);
+  assert.deepEqual(an.participants.map((p) => [p.id, p.attempt]).sort(), [["A", 1], ["B", 2]], "nomor percobaan mengikuti waktu nyata");
+}
 
 console.log("semua uji analitik lulus");

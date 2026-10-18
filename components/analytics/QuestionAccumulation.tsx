@@ -101,6 +101,8 @@ export function QuestionAccumulation({ questions }: { questions: QuestionAcc[] }
                       rowLabel="Pilihan / jawaban"
                       pctLabel="Dari peserta"
                       compact
+                      centerValue={x.respondents}
+                      centerLabel="Peserta"
                       kind={overrides[x.id] ?? globalKind}
                       onKindChange={(k) => setOverrides((o) => ({ ...o, [x.id]: k }))}
                     />

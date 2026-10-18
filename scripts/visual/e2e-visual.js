@@ -119,6 +119,30 @@ const cls = async (p, sel) => (await p.getAttribute(sel, "class")) || "";
   ok((await p.locator(".xf-dyn").count()) === 0, "tema tanpa motion: TIDAK ada lapisan dinamis (perilaku lama utuh)");
   await c.close();
 
+  // ---------- T7 halaman 404 bermerek ----------
+  c = await ctx(browser); p = await c.newPage();
+  const r404 = await p.goto(BASE + "/halaman-acak", { waitUntil: "networkidle" });
+  ok(r404.status() === 404, "rute tidak ada -> HTTP 404");
+  ok(((await p.textContent("h1")) || "").includes("Halaman tidak ketemu"), "404 memakai halaman kustom bermerek");
+  ok((await p.getByRole("link", { name: "Kembali ke beranda", exact: true }).count()) === 1, "404: ada tautan kembali ke beranda");
+  ok((await overflow(p)) <= 0, "404 tidak melebar di 360px");
+  ok((await p.locator(".xf-bg").count()) === 1, "404 ikut memakai latar global");
+  await p.screenshot({ path: `${SHOT_DIR}/v-404.png` });
+  const rf = await p.goto(BASE + "/f/tidak-ada-slug", { waitUntil: "networkidle" });
+  ok(rf.status() === 404 && (await p.title()).includes("Form tidak tersedia"), "form publik yang tidak ada -> 404 'Form tidak tersedia' (backend hidup)");
+  // database "mati" (mock membalas 500): harus tampil halaman error bermerek, BUKAN 404 palsu
+  await p.goto(BASE + "/f/kaboom-form", { waitUntil: "networkidle" });
+  await p.waitForTimeout(500);
+  ok((await p.getByRole("heading", { name: "Layanan sedang bermasalah." }).count()) === 1 && (await p.title()).includes("Ada kendala"), "database mati: halaman error bermerek tampil + judul tab (bukan 404)");
+  ok((await p.getByRole("button", { name: "Coba lagi" }).count()) === 1 && (await overflow(p)) <= 0, "error: tombol Coba lagi ada dan layout tidak melebar");
+  await p.screenshot({ path: `${SHOT_DIR}/v-error.png` });
+  await p.getByRole("button", { name: "Coba lagi" }).click(); await p.waitForTimeout(800);
+  ok((await p.getByRole("heading", { name: "Layanan sedang bermasalah." }).count()) === 1, "klik Coba lagi tidak membuat halaman crash (tetap error karena database masih mati)");
+  await p.goto(BASE + "/halaman-acak", { waitUntil: "networkidle" });
+  const og = await p.evaluate(() => ({ img: document.querySelector('meta[property="og:image"]')?.content, title: document.querySelector('meta[property="og:title"]')?.content }));
+  ok(/^https:\/\/[^/]+\/og\.png$/.test(og.img || ""), `og:image berupa URL absolut: ${og.img}`);
+  await c.close();
+
   // ---------- T6 logout dari halaman Akun ----------
   c = await ctx(browser); p = await c.newPage();
   await p.goto(BASE + "/dashboard/akun", { waitUntil: "networkidle" });

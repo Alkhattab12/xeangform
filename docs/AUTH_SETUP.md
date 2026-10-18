@@ -8,7 +8,7 @@ Status verifikasi email selalu dibaca dari Supabase Auth (`email_confirmed_at`),
 | Pengaturan | Nilai | Kenapa |
 |---|---|---|
 | Providers → Email → **Confirm email** | **ON** | Tanpa ini akun baru langsung aktif tanpa konfirmasi. Kode hanya mencabut sesinya dan mencatat peringatan `auth_signup_session_issued`, tetapi dengan Confirm email OFF Supabase menandai email sebagai terverifikasi sejak awal, jadi konfirmasi tidak bisa dipaksakan dari kode. |
-| URL Configuration → **Site URL** | domain produksi, mis. `https://xeangform.vercel.app` | Dasar tautan di email. |
+| URL Configuration → **Site URL** | domain produksi: `https://form.xeandigital.web.id` | Dasar tautan di email. |
 | URL Configuration → **Redirect URLs** | `https://<domain-produksi>/auth/callback`, `http://localhost:3000/auth/callback`, dan pola preview Vercel bila dipakai | `emailRedirectTo` ditolak Supabase jika tidak ada di daftar ini. |
 | SMTP Settings | SMTP kustom (Resend, Brevo, dll.) untuk produksi | SMTP bawaan Supabase dibatasi sangat ketat (beberapa email per jam) dan sering membuat email konfirmasi tidak sampai. |
 | Password | minimal 8 karakter | Sama dengan validasi aplikasi (8–72). |
@@ -26,7 +26,7 @@ ganti tautan di template **Confirm signup** dengan (dan serupa untuk **Change em
 
 | Variabel | Catatan |
 |---|---|
-| `NEXT_PUBLIC_SITE_URL` | domain produksi, dipakai sebagai cadangan membentuk URL redirect |
+| `NEXT_PUBLIC_SITE_URL` | `https://form.xeandigital.web.id`. Dipakai sebagai cadangan URL redirect dan sebagai `metadataBase` pratinjau tautan (OpenGraph). Bawaan di `lib/site.ts` sama dengan domain ini. Perlu redeploy bila diubah (nilai tertanam saat build). |
 | `NEXT_PUBLIC_SUPABASE_URL` | publik |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | publik |
 | `SUPABASE_SERVICE_ROLE_KEY` | RAHASIA. Tandai Sensitive, jangan pakai prefix `NEXT_PUBLIC_`, jangan di-commit |
@@ -54,6 +54,13 @@ next build && bash scripts/e2e-smoke.sh      # uji asap tanpa backend sungguhan
 ```
 Yang TIDAK bisa diuji otomatis tanpa project Supabase asli: pengiriman email nyata, klik tautan konfirmasi, pergantian email dan sandi end-to-end. Uji manual setelah deploy.
 
-## 6. Keterbatasan yang diketahui
+## 6. Header keamanan, pratinjau tautan, halaman 404/error
+- `next.config.ts` memasang HSTS, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, serta `X-Frame-Options: SAMEORIGIN` + CSP `frame-ancestors 'self'`
+  untuk semua rute KECUALI `/f/*` (form publik boleh disematkan lewat iframe). CSP berisi `script-src` sengaja belum dipasang: perlu nonce dan uji khusus.
+- Pratinjau tautan (WhatsApp/Telegram/X): metadata di `app/layout.tsx` + `lib/site.ts`, gambar `public/og.png` (1200x630). Form publik memakai judul dan
+  deskripsinya sendiri. Cek hasilnya dengan menempel tautan ke WhatsApp; cache pratinjau platform bisa tertunda.
+- `app/not-found.tsx` (404 global) dan `app/error.tsx` (gangguan, mis. database tak terjangkau): halaman bermerek. Detail error server tidak ditampilkan ke pengunjung.
+
+## 7. Keterbatasan yang diketahui
 - Rate limit (`lib/forms/rate-limit.ts`) tersimpan di memori per instance serverless: penghambat dasar, bukan jaminan lintas instance.
 - Preferensi background (gerak/diam) disimpan di `localStorage` per perangkat, belum disinkronkan ke profil.

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Fredoka, IBM_Plex_Mono, Inter, Lora, Orbitron, Space_Grotesk } from "next/font/google";
 import { AmbientBackground } from "@/components/background/AmbientBackground";
 import { BackgroundProvider } from "@/components/background/BackgroundProvider";
+import { OG_IMAGE, SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE, SITE_URL } from "@/lib/site";
 import { LoadingProvider } from "@/components/ui/LoadingProvider";
 import { BG_INIT_SCRIPT } from "@/lib/background/mode";
 import "./globals.css";
@@ -15,8 +16,25 @@ const serif = Lora({ subsets: ["latin"], variable: "--font-lora", display: "swap
 const futuristic = Orbitron({ subsets: ["latin"], variable: "--font-orbitron", display: "swap", preload: false });
 
 export const metadata: Metadata = {
-  title: { default: "Syamil Form — Forms with Character.", template: "%s · Syamil Form" },
-  description: "Buat form online yang berkarakter, kumpulkan respons, terima file, dan analisis datanya.",
+  metadataBase: new URL(SITE_URL),
+  title: { default: `${SITE_NAME} — ${SITE_TAGLINE}`, template: `%s · ${SITE_NAME}` },
+  description: SITE_DESCRIPTION,
+  applicationName: SITE_NAME,
+  openGraph: {
+    type: "website",
+    siteName: SITE_NAME,
+    locale: "id_ID",
+    url: "/",
+    title: `${SITE_NAME} — ${SITE_TAGLINE}`,
+    description: SITE_DESCRIPTION,
+    images: [OG_IMAGE],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: `${SITE_NAME} — ${SITE_TAGLINE}`,
+    description: SITE_DESCRIPTION,
+    images: [OG_IMAGE.url],
+  },
 };
 
 export const viewport: Viewport = {

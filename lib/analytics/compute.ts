@@ -97,6 +97,8 @@ function groupOf(f: FormField | null, a: unknown): { key: string; label: string 
 }
 
 // ---------------- Waktu (WIB) ----------------
+/** Pembanding waktu ISO yang benar. localeCompare/string salah urut bila satu waktu tak punya pecahan detik ("…:00+00:00" vs "…:00.5+00:00"). */
+export const byTime = (a: string, b: string) => Date.parse(a) - Date.parse(b);
 export const wibDay = (iso: string) => new Date(Date.parse(iso) + 7 * 3600_000).toISOString().slice(0, 10);
 const utcDate = (day: string) => new Date(`${day}T12:00:00Z`);
 const addDays = (day: string, n: number) => new Date(utcDate(day).getTime() + n * 86_400_000).toISOString().slice(0, 10);
@@ -192,7 +194,7 @@ export function selectResponses(rows: Scored[], f: AnalyticsFilters, opts: { ran
     for (const r of out) {
       if (!r.participant) continue;
       const cur = pick.get(r.participant);
-      if (!cur || (f.attempt === "pertama" ? r.at < cur.at : r.at > cur.at)) pick.set(r.participant, r);
+      if (!cur || (f.attempt === "pertama" ? byTime(r.at, cur.at) < 0 : byTime(r.at, cur.at) > 0)) pick.set(r.participant, r);
     }
     out = out.filter((r) => !r.participant || pick.get(r.participant) === r);
   }
@@ -574,7 +576,7 @@ export function analyze(rows: Scored[], fields: FormField[], fl: AnalyticsFilter
   const keyed = fields.filter(hasAnswerKey).length;
   const t = trend(rows, fl.interval);
   const seen = new Map<string, number>();
-  const ordered = [...rows].sort((a, b) => a.at.localeCompare(b.at));
+  const ordered = [...rows].sort((a, b) => byTime(a.at, b.at));
   const attemptNo = new Map<string, number>();
   for (const r of ordered) {
     if (!r.participant) continue;
@@ -592,7 +594,7 @@ export function analyze(rows: Scored[], fields: FormField[], fl: AnalyticsFilter
     statusCounts: statusCounts(rows),
     questions: questionRows(rows, fields, fl),
     participants: [...rows]
-      .sort((a, b) => b.at.localeCompare(a.at))
+      .sort((a, b) => byTime(b.at, a.at))
       .slice(0, 500)
       .map((r) => ({ id: r.id, at: r.at, who: r.who, group: r.groupLabel, pct: r.pct, correct: r.correct, wrong: r.wrong, blank: r.blank, attempt: attemptNo.get(r.id) ?? 1 })),
   };

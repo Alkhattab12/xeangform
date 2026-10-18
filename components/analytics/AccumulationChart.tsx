@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { DataTable, type Col, type TableRow } from "./DataTable";
+import { insideLabelRenderer } from "./InsideLabel";
 import { SERIES, fmtInt, fmtPct } from "./format";
 import { useReducedMotion } from "./useReducedMotion";
 
@@ -65,9 +66,12 @@ type Props = {
   compact?: boolean;
   emptyText?: string;
   note?: string;
+  /** Angka di tengah donat. Bawaan: jumlah semua irisan. Isi bila jumlah irisan bukan jumlah responden (mis. soal pilihan ganda). */
+  centerValue?: number;
+  centerLabel?: string;
 };
 
-export function AccumulationChart({ name, items, valueLabel, rowLabel, pctLabel = "Persentase", extraColumns = [], defaultKind = "donut", kind: controlled, onKindChange, compact = false, emptyText = "Belum ada data dalam cakupan filter ini.", note }: Props) {
+export function AccumulationChart({ name, items, valueLabel, rowLabel, pctLabel = "Persentase", extraColumns = [], defaultKind = "donut", kind: controlled, onKindChange, compact = false, emptyText = "Belum ada data dalam cakupan filter ini.", note, centerValue, centerLabel }: Props) {
   const [own, setOwn] = useState<Kind>(defaultKind);
   const kind = controlled ?? own;
   const reduced = useReducedMotion();
@@ -80,6 +84,8 @@ export function AccumulationChart({ name, items, valueLabel, rowLabel, pctLabel 
   const rows: TableRow[] = items.map((it) => ({ id: it.key, label: it.label, value: it.value, pct: it.pct, status: it.status ?? null, ...(it.cells ?? {}) }));
   const label = KINDS.find((k) => k.key === kind)?.label ?? "";
   const rowH = compact ? 34 : 44;
+  // Persen ditulis di dalam irisan (bukan di luar): teks diambil dari data, ukuran irisan menentukan apakah muat
+  const pieLabel = insideLabelRenderer<Datum>((d) => (d.pct !== null && d.pct !== undefined ? `${Math.round(d.pct)}%` : null), { fontSize: compact ? 11 : 12 });
 
   return (
     <div className="w-full min-w-0 max-w-full">
@@ -97,11 +103,11 @@ export function AccumulationChart({ name, items, valueLabel, rowLabel, pctLabel 
         <>
           {kind !== "tabel" && (
             <div className="nb-panel nb-panel-strong mt-3 p-3 sm:p-4 w-full min-w-0 max-w-full overflow-hidden">
-              <div role="img" aria-label={`Grafik ${label.toLowerCase()}: ${name}. Rincian angka ada pada daftar di bawah grafik.`} style={{ height: kind === "hbar" ? Math.max(compact ? 150 : 200, data.length * rowH + 40) : compact ? 240 : 300 }}>
+              <div role="img" aria-label={`Grafik ${label.toLowerCase()}: ${name}. Rincian angka ada pada daftar di bawah grafik.`} className="relative" style={{ height: kind === "hbar" ? Math.max(compact ? 150 : 200, data.length * rowH + 40) : compact ? 240 : 300 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   {kind === "pie" || kind === "donut" ? (
                     <PieChart>
-                      <Pie data={data} dataKey="value" nameKey="name" innerRadius={kind === "donut" ? "55%" : 0} outerRadius="85%" stroke="var(--line)" strokeWidth={2} label={({ payload }: { payload?: Datum }) => (payload && payload.pct !== null && payload.pct >= 6 ? `${Math.round(payload.pct)}%` : "")} labelLine={false} {...anim}>
+                      <Pie data={data} dataKey="value" nameKey="name" innerRadius={kind === "donut" ? "55%" : 0} outerRadius="85%" stroke="var(--line)" strokeWidth={2} label={pieLabel} labelLine={false} {...anim}>
                         {data.map((d) => (
                           <Cell key={d.key} fill={d.fill} />
                         ))}
@@ -136,6 +142,12 @@ export function AccumulationChart({ name, items, valueLabel, rowLabel, pctLabel 
                     </BarChart>
                   )}
                 </ResponsiveContainer>
+                {kind === "donut" && (
+                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center" aria-hidden="true">
+                    <span className="font-display text-2xl font-bold leading-none sm:text-3xl">{fmtInt(centerValue ?? total)}</span>
+                    <span className="nb-mono mt-1 max-w-[6rem] break-words text-[0.7rem] normal-case leading-tight tracking-normal">{centerLabel ?? valueLabel}</span>
+                  </div>
+                )}
               </div>
               <ul className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm">
                 {data.map((d) => (

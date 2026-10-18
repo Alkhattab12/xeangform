@@ -6,6 +6,7 @@ import { GateCard } from "@/components/public/GateCard";
 import { PublicForm } from "@/components/public/PublicForm";
 import { ThemeScope } from "@/components/public/ThemeScope";
 import { findPriorSubmission, getPublicForm } from "@/lib/forms/public";
+import { OG_IMAGE, SITE_DESCRIPTION, SITE_NAME } from "@/lib/site";
 import { createClient } from "@/lib/supabase/server";
 import { getVerifiedUser } from "@/lib/auth/verified-user";
 
@@ -14,7 +15,15 @@ export const dynamic = "force-dynamic"; // unpublish & status pengisian langsung
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   const form = await getPublicForm(slug);
-  return { title: form?.title ?? "Form tidak tersedia", robots: { index: false, follow: false } };
+  // Pratinjau saat tautan dibagikan (WhatsApp/Telegram). Hanya untuk form yang terbit; draft/arsip tampil generik.
+  const title = form?.title ?? "Form tidak tersedia";
+  const description = form?.description?.trim() ? form.description.trim().slice(0, 200) : SITE_DESCRIPTION;
+  return {
+    title,
+    robots: { index: false, follow: false },
+    openGraph: { type: "website", siteName: SITE_NAME, locale: "id_ID", title, description, images: [OG_IMAGE] },
+    twitter: { card: "summary_large_image", title, description, images: [OG_IMAGE.url] },
+  };
 }
 
 export default async function PublicFormPage({ params }: { params: Promise<{ slug: string }> }) {
