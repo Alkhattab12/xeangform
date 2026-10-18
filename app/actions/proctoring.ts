@@ -154,7 +154,7 @@ export async function initProctoringSession(
           status: retry.status as ProctoringSessionStatus,
           violationCount: retry.violation_count,
           maxViolations: retry.max_violations,
-          isBlocked: retry.status === "blocked",
+          isBlocked: retry.status === "blocked" || retry.violation_count >= retry.max_violations,
         };
       }
       return { ok: false, error: "Gagal menginisialisasi sesi pengawasan." };
@@ -254,8 +254,9 @@ export async function recordProctoringViolation(
     const nextStatus: ProctoringSessionStatus = isNowBlocked ? "blocked" : "in_progress";
     const nowIso = new Date(now).toISOString();
 
-    // 5. Update tabel proctoring_sessions
-    const { error: updateErr } = await admin
+    // 5. Update tabel proctoring_sessions (compare-and-set pada violation_count:
+    //    jika dua event datang bersamaan, hanya satu yang berhasil menambah hitungan)
+    const { data: updatedRows, error: updateErr } = await admin
       .from("proctoring_sessions")
       .update({
         violation_count: nextCount,
@@ -263,11 +264,25 @@ export async function recordProctoringViolation(
         last_violation_at: nowIso,
         ended_at: isNowBlocked ? nowIso : null,
       })
-      .eq("id", session.id);
+      .eq("id", session.id)
+      .eq("violation_count", session.violation_count)
+      .select("id");
 
     if (updateErr) {
       console.error("update_proctoring_session_failed", updateErr.message);
       return { ok: false, error: "Gagal memperbarui status pelanggaran." };
+    }
+
+    if (!updatedRows || updatedRows.length === 0) {
+      // Event lain sudah memperbarui sesi lebih dulu: jangan hitung ganda.
+      return {
+        ok: true,
+        deduped: true,
+        violationCount: session.violation_count,
+        maxViolations: session.max_violations,
+        status: session.status as ProctoringSessionStatus,
+        isBlocked: false,
+      };
     }
 
     // 6. Simpan detail log kejadian di proctoring_logs
@@ -292,7 +307,7 @@ export async function recordProctoringViolation(
           userId: form.owner_id,
           type: "proctoring_violation",
           title: `PESERTA DIBLOKIR: ${respondentLabel} (${nextCount}/${session.max_violations})`,
-          message: `Peserta ${respondentLabel} pada form "${form.title}" telah otomatis dihentikan dan diblokir setelah mencapai batas 3 pelanggaran (${message}).`,
+          message: `Peserta ${respondentLabel} pada form "${form.title}" telah otomatis dihentikan dan diblokir setelah mencapai batas ${session.max_violations} pelanggaran (${message}).`,
           link: `/dashboard/forms/${form.id}/violations`,
           metadata: {
             formId: form.id,
@@ -335,6 +350,8 @@ export async function recordProctoringViolation(
 
 /**
  * Pemilik form membuka blokir peserta (Unblock) dengan audit log.
+ * Hitungan pelanggaran direset ke 0, karena init/record memakai violation_count >= max_violations
+ * sebagai penanda blokir; tanpa reset peserta langsung terblokir lagi. Riwayat tetap ada di proctoring_logs.
  */
 export async function unblockProctoringSession(
   sessionId: string
@@ -349,7 +366,7 @@ export async function unblockProctoringSession(
     // Pastikan session milik form yang di-own oleh user ini
     const { data: session } = await admin
       .from("proctoring_sessions")
-      .select("id,form_id,metadata_json,forms(owner_id)")
+      .select("id,form_id,violation_count,metadata_json,forms(owner_id)")
       .eq("id", sessionId)
       .maybeSingle();
 
@@ -372,12 +389,16 @@ export async function unblockProctoringSession(
     unblockLogs.push({
       unblocked_by: user.id,
       unblocked_at: new Date().toISOString(),
+      previous_violation_count: session.violation_count,
     });
 
     const { error: updateErr } = await admin
       .from("proctoring_sessions")
       .update({
         status: "in_progress",
+        violation_count: 0,
+        ended_at: null,
+        last_violation_at: null,
         metadata_json: { ...currentMeta, unblock_history: unblockLogs },
       })
       .eq("id", sessionId);
