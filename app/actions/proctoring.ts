@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { getVerifiedUser } from "@/lib/auth/verified-user";
+import { getClientIpHash } from "@/lib/forms/client-ip";
 import { parseSettings } from "@/lib/forms/schema";
 import { createNotification } from "@/lib/notifications/create";
 
@@ -18,6 +19,13 @@ const violationTypeSchema = z.enum([
   "clipboard_restricted",
   "other",
 ]);
+
+/**
+ * Batas pembuatan sesi baru per IP (hash) per form dalam jendela waktu.
+ * Sengaja longgar: satu kelas yang memakai jaringan/Wi-Fi yang sama harus tetap bisa masuk bersamaan.
+ */
+const NEW_SESSION_WINDOW_MS = 10 * 60_000;
+const MAX_NEW_SESSIONS_PER_IP = 120;
 
 export type ProctoringSessionStatus = "in_progress" | "completed" | "blocked";
 
@@ -47,6 +55,7 @@ export type RecordViolationResult =
 /**
  * Memulai atau memulihkan sesi ujian peserta (Server-Authoritative).
  * Jika sesi sudah terblokir sebelumnya, server langsung mengembalikan status blocked.
+ * Untuk peserta yang login, blokir tertaut ke akun: membuka tab/browser baru tidak menghapusnya.
  */
 export async function initProctoringSession(
   slug: string,
@@ -93,6 +102,30 @@ export async function initProctoringSession(
       // Abaikan jika pemanggil adalah anon
     }
 
+    // 2b. Blokir tertaut ke akun: sesi baru (tab/browser lain) tidak menghapus blokir peserta yang login
+    if (respondentId) {
+      const { data: blockedByAccount } = await admin
+        .from("proctoring_sessions")
+        .select("id,violation_count,max_violations")
+        .eq("form_id", form.id)
+        .eq("respondent_id", respondentId)
+        .eq("status", "blocked")
+        .limit(1)
+        .maybeSingle();
+
+      if (blockedByAccount) {
+        return {
+          ok: true,
+          enabled: true,
+          sessionId: blockedByAccount.id,
+          status: "blocked",
+          violationCount: blockedByAccount.violation_count,
+          maxViolations: blockedByAccount.max_violations,
+          isBlocked: true,
+        };
+      }
+    }
+
     // 3. Cek apakah sesi sudah ada
     const { data: existing, error: findErr } = await admin
       .from("proctoring_sessions")
@@ -119,6 +152,20 @@ export async function initProctoringSession(
       };
     }
 
+    // 3b. Pembatas pembuatan sesi baru per IP per form (cegah pembanjiran tabel)
+    const ipHash = await getClientIpHash();
+    const since = new Date(Date.now() - NEW_SESSION_WINDOW_MS).toISOString();
+    const { count: recentCount } = await admin
+      .from("proctoring_sessions")
+      .select("id", { count: "exact", head: true })
+      .eq("form_id", form.id)
+      .eq("metadata_json->>ip_hash", ipHash)
+      .gte("created_at", since);
+
+    if ((recentCount ?? 0) >= MAX_NEW_SESSIONS_PER_IP) {
+      return { ok: false, error: "Terlalu banyak sesi baru dari jaringan ini. Tunggu beberapa menit lalu coba lagi." };
+    }
+
     // 4. Jika belum ada, buat sesi baru
     const maxViolations = settings.proctoring.maxViolations ?? 3;
     const { data: created, error: insErr } = await admin
@@ -132,6 +179,7 @@ export async function initProctoringSession(
         status: "in_progress",
         violation_count: 0,
         max_violations: maxViolations,
+        metadata_json: { ip_hash: ipHash },
       })
       .select("id,status,violation_count,max_violations")
       .single();

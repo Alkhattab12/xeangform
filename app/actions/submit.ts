@@ -31,6 +31,8 @@ const payloadSchema = z.object({
   answers: z.record(z.string(), z.unknown()),
   clientKey: z.string().regex(/^[A-Za-z0-9-]{8,64}$/),
   website: z.string().max(200).optional(), // honeypot
+  // Diisi klien saat peserta didiskualifikasi; hanya diterima server jika sesi memang terblokir
+  disqualified: z.boolean().optional(),
   violations: z
     .object({
       count: z.number().int().min(0).max(10000),
@@ -41,6 +43,7 @@ const payloadSchema = z.object({
 
 const GENERIC = "Respons belum tersimpan. Coba kirim lagi sebentar lagi.";
 const ALREADY = "Formulir ini sudah selesai kamu kerjakan. Setiap akun hanya dapat mengisi satu kali.";
+const NO_SESSION = "Sesi ujian tidak ditemukan. Muat ulang halaman, lalu mulai pengerjaan dari awal.";
 const MAX_PER_MINUTE = 5;
 
 const scoreOf = (meta: unknown): QuizResult | undefined => {
@@ -76,24 +79,59 @@ export async function submitResponse(slug: string, input: unknown): Promise<Subm
       .limit(1);
     if (dup && dup.length > 0) return { ok: true, result: settings.quiz ? scoreOf(dup[0].metadata_json) : undefined };
 
-    // 2b) Proteksi Anti-Cheating: tolak jika sesi ujian diblokir di server
+    // 2b) Proteksi Anti-Cheating (server-authoritative): form ber-proctoring wajib punya sesi aktif di server
+    let disqualified = false;
+    let procMeta: Record<string, unknown> | null = null;
     if (settings.proctoring?.enabled) {
-      const { data: procSession } = await admin
+      const { data: procSession, error: procErr } = await admin
         .from("proctoring_sessions")
         .select("id,status,violation_count,max_violations")
         .eq("form_id", form.id)
         .eq("session_key", payload.data.clientKey)
         .maybeSingle();
+      if (procErr) return { ok: false, error: GENERIC };
+      if (!procSession) return { ok: false, error: NO_SESSION };
 
-      if (procSession) {
-        if (procSession.status === "blocked" || procSession.violation_count >= procSession.max_violations) {
+      const sessionBlocked =
+        procSession.status === "blocked" || procSession.violation_count >= procSession.max_violations;
+
+      // Blokir tertaut ke akun: sesi baru dari tab/browser lain tidak menghapus blokir peserta yang login
+      let accountBlocked = false;
+      if (!sessionBlocked) {
+        try {
+          const sbp = await createClient();
+          const pu = await getVerifiedUser(sbp);
+          if (pu) {
+            const { count: blockedCount } = await admin
+              .from("proctoring_sessions")
+              .select("id", { count: "exact", head: true })
+              .eq("form_id", form.id)
+              .eq("respondent_id", pu.id)
+              .eq("status", "blocked");
+            accountBlocked = (blockedCount ?? 0) > 0;
+          }
+        } catch {
+          // peserta anonim: tidak ada akun untuk dicek
+        }
+      }
+
+      if (sessionBlocked || accountBlocked) {
+        // Kirim otomatis jawaban parsial hanya jika diaktifkan pemilik form dan sesi ini memang terblokir
+        const canAutoSubmit =
+          sessionBlocked && settings.proctoring.autoSubmitOnDisqualify && payload.data.disqualified === true;
+        if (!canAutoSubmit) {
           return {
             ok: false,
             blocked: true,
             error: "Sesi ujian Anda telah dihentikan dan diblokir karena mencapai batas maksimal pelanggaran.",
           };
         }
+        disqualified = true;
+      } else if (procSession.status !== "in_progress") {
+        return { ok: false, error: "Sesi ujian ini sudah berakhir. Muat ulang halaman untuk memulai sesi baru." };
       }
+
+      procMeta = { session_id: procSession.id, violation_count: procSession.violation_count, disqualified };
     }
 
     // 3) Pembatasan 1 respons per akun (wajib login)
@@ -117,7 +155,18 @@ export async function submitResponse(slug: string, input: unknown): Promise<Subm
     // 4) Validasi jawaban terhadap skema tersimpan (bukan skema dari browser)
     const schema = formSchemaJson.safeParse(form.schema_json);
     if (!schema.success) return { ok: false, error: GENERIC };
-    const checked = validateAnswers(schema.data.fields, payload.data.answers);
+    // Diskualifikasi: terima jawaban parsial (kolom wajib dilonggarkan, isian yang tidak valid dibuang)
+    const fieldsForCheck = disqualified
+      ? schema.data.fields.map((f) => ({ ...f, required: false }))
+      : schema.data.fields;
+    const first = validateAnswers(fieldsForCheck, payload.data.answers);
+    const checked =
+      !first.ok && disqualified
+        ? validateAnswers(
+            fieldsForCheck,
+            Object.fromEntries(Object.entries(payload.data.answers).filter(([id]) => !(id in first.errors)))
+          )
+        : first;
     if (!checked.ok) return { ok: false, fieldErrors: checked.errors };
 
     // 5) Rate limit dasar per IP per form (IP disimpan sebagai hash)
@@ -156,6 +205,7 @@ export async function submitResponse(slug: string, input: unknown): Promise<Subm
     const metadata: Record<string, unknown> = { client_key: payload.data.clientKey, ip_hash: ipHash };
     if (score) metadata.score = score;
     if (!settings.allowTabSwitch && payload.data.violations) metadata.violations = payload.data.violations;
+    if (procMeta) metadata.proctoring = procMeta;
     if (respondent) metadata.respondent = { email: respondent.email, name: respondent.name };
 
     const { data: inserted, error: insErr } = await admin
@@ -227,8 +277,10 @@ export async function submitResponse(slug: string, input: unknown): Promise<Subm
         await createNotification({
           userId: form.owner_id,
           type: "form_response",
-          title: "Respons Baru Diterima",
-          message: `Terdapat respons baru dari ${respondentLabel} pada formulir "${form.title || "Formulir"}".`,
+          title: disqualified ? "Respons Otomatis (Peserta Didiskualifikasi)" : "Respons Baru Diterima",
+          message: disqualified
+            ? `Jawaban parsial dari ${respondentLabel} pada formulir "${form.title || "Formulir"}" dikirim otomatis karena peserta didiskualifikasi.`
+            : `Terdapat respons baru dari ${respondentLabel} pada formulir "${form.title || "Formulir"}".`,
           link: `/dashboard/forms/${form.id}/responses`,
           metadata: {
             formId: form.id,
@@ -240,7 +292,7 @@ export async function submitResponse(slug: string, input: unknown): Promise<Subm
         console.error("submit_notification_failed", notifErr);
       }
 
-      // 10) Tandai sesi pengawasan ujian sebagai selesai (completed)
+      // 10) Tandai sesi pengawasan ujian sebagai selesai (completed); sesi terblokir tetap terblokir
       if (settings.proctoring?.enabled) {
         try {
           await admin
