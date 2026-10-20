@@ -53,13 +53,24 @@ export default async function ResponseDetailPage({
       <p className="nb-mono mt-3">{when} WIB</p>
       <p className="nb-mono mt-1 break-all">ID: {sid}</p>
 
-      {(meta.score || meta.respondent || meta.violations !== undefined) && (
+      {meta.disqualified && (
+        <div role="alert" className="nb-panel border-[3px] border-line bg-red-600 text-white p-4 font-bold mt-4 shadow-[3px_3px_0px_#000]">
+          ⚠ Sesi didiskualifikasi: Respons ini dikirim otomatis setelah peserta mencapai batas {meta.violations ?? 3} pelanggaran keamanan. Jawaban ini adalah jawaban parsial sebelum sesi diblokir.
+        </div>
+      )}
+      {meta.timeExpired && (
+        <div role="status" className="nb-panel border-[3px] border-line bg-amber-400 text-ink p-4 font-bold mt-4 shadow-[3px_3px_0px_#000]">
+          ⏰ Batas waktu habis: Respons ini dikirim otomatis saat waktu ujian berakhir. Jawaban ini adalah jawaban yang sempat diisi oleh peserta.
+        </div>
+      )}
+
+      {(meta.score || meta.respondent || meta.violations !== undefined || meta.disqualified || meta.timeExpired) && (
         <div className="nb-panel nb-panel-strong nb-shadow mt-6 bg-accent p-4 text-[color:var(--on-accent)]">
           {meta.score && <p className="font-display text-2xl font-bold">Benar {meta.score.correct} dari {meta.score.total} soal</p>}
           {meta.respondent && (
             <p className="mt-2">Akun: {meta.respondent.name ? `${meta.respondent.name} · ` : ""}{meta.respondent.email ?? "-"}</p>
           )}
-          {meta.violations !== undefined && <p className="mt-2">Berpindah tab/jendela: {meta.violations} kali</p>}
+          {meta.violations !== undefined && <p className="mt-2">Pelanggaran dicatat: {meta.violations} kali</p>}
         </div>
       )}
 

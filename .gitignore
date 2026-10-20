@@ -8,3 +8,6 @@ out
 next-env.d.ts
 *.tsbuildinfo
 bug-notifikasi.jpg
+.agents/mcp_config.json
+.agent/
+test-results/

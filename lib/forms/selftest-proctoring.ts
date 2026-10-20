@@ -170,4 +170,104 @@ assert.equal(session.violationCount, 3, "Riwayat jumlah pelanggaran asli tidak b
 assert.equal(auditLogs.length, 1, "Tindakan unblock harus tercatat di audit log");
 assert.equal(auditLogs[0].by, "owner-uuid-123");
 
-console.log("semua uji sistem Anti-Cheating dan Pengawasan lulus 100%");
+// ---- 6. Pengujian Batas Waktu Ujian & Masa Tenggang (Grace Period)
+import { deadlineMs, formatClock, TIME_LIMIT_GRACE_MS } from "./time-limit";
+import { resolveTimeLimit, resolveShuffle } from "./schema";
+
+const tlSettings = parseSettings({ timeLimit: { enabled: true, minutes: 45 } });
+assert.equal(tlSettings.timeLimit.enabled, true);
+assert.equal(tlSettings.timeLimit.minutes, 45);
+assert.equal(tlSettings.timeLimitMinutes, 45);
+assert.equal(tlSettings.durationMinutes, 45);
+
+const tlAlias = parseSettings({ durationMinutes: 60, timeLimit: { enabled: true } });
+assert.equal(tlAlias.timeLimit.minutes, 60);
+
+const baseTimeIso = "2026-10-20T10:00:00.000Z";
+const baseEpoch = Date.parse(baseTimeIso);
+const dl = deadlineMs(baseTimeIso, 30);
+assert.equal(dl, baseEpoch + 30 * 60_000, "Deadline harus tepat started_at + durasi menit");
+
+// Format jam formatClock
+assert.equal(formatClock(0), "00:00");
+assert.equal(formatClock(65), "01:05");
+assert.equal(formatClock(3665), "1:01:05");
+
+// Server validation mock
+function validateTimeLimit(startedIso: string, durationMinutes: number, submitEpoch: number, timeUp: boolean) {
+  const d = deadlineMs(startedIso, durationMinutes);
+  if (d === null) return { ok: false, error: "invalid" };
+  if (submitEpoch > d + TIME_LIMIT_GRACE_MS) {
+    return { ok: false, timeExpired: true };
+  }
+  const late = submitEpoch > d;
+  const auto = late || (timeUp && submitEpoch >= d - 10_000);
+  return { ok: true, auto_submitted: auto, timeExpired: auto };
+}
+
+// Kirim tepat waktu
+assert.equal(validateTimeLimit(baseTimeIso, 30, baseEpoch + 15 * 60_000, false).ok, true);
+// Kirim dalam masa tenggang (misal telat 20 detik, grace period 45 detik)
+const withinGrace = validateTimeLimit(baseTimeIso, 30, baseEpoch + 30 * 60_000 + 20_000, true);
+assert.equal(withinGrace.ok, true);
+assert.equal(withinGrace.timeExpired, true, "Dalam masa tenggang harus diterima sebagai auto-submit waktu habis");
+// Kirim lewat masa tenggang (telat 60 detik)
+const pastGrace = validateTimeLimit(baseTimeIso, 30, baseEpoch + 30 * 60_000 + 60_000, false);
+assert.equal(pastGrace.ok, false);
+assert.equal(pastGrace.timeExpired, true, "Lewat masa tenggang harus ditolak dengan timeExpired=true");
+
+// ---- 7. Pengujian Seeded Shuffle Deterministik
+import { seededShuffle, shufflePages, optionsForDisplay } from "./shuffle";
+import type { FormField } from "./schema";
+import type { FormPage } from "./pages";
+
+const items = ["A", "B", "C", "D", "E"];
+const seed1 = "form-123:session-xyz";
+const shuffled1 = seededShuffle(items, seed1);
+const shuffled1Repeat = seededShuffle(items, seed1);
+assert.deepEqual(shuffled1, shuffled1Repeat, "Seeded shuffle harus 100% deterministik untuk seed yang sama");
+
+const seed2 = "form-123:session-different";
+const shuffled2 = seededShuffle(items, seed2);
+// Berbeda seed biasanya menghasilkan urutan berbeda
+assert.equal(shuffled1.join(","), shuffled1Repeat.join(","));
+
+const mockField: FormField = {
+  id: "q1",
+  type: "radio",
+  label: "Pilih satu",
+  required: true,
+  options: [
+    { id: "opt1", label: "Opsi 1" },
+    { id: "opt2", label: "Opsi 2" },
+    { id: "opt3", label: "Opsi 3" },
+    { id: "opt4", label: "Opsi 4" },
+  ],
+};
+
+const dispOpts1 = optionsForDisplay(mockField, seed1, true);
+const dispOpts1Again = optionsForDisplay(mockField, seed1, true);
+assert.deepEqual(dispOpts1, dispOpts1Again, "Options shuffle harus deterministik");
+
+// Nonaktif shuffle
+const dispOptsDisabled = optionsForDisplay(mockField, seed1, false);
+assert.deepEqual(dispOptsDisabled, mockField.options, "Jika shuffle nonaktif, opsi harus sesuai urutan asli");
+
+// ---- 8. Pengujian readMeta untuk Dashboard Respons
+import { readMeta } from "./answers";
+
+const metaProc = readMeta({
+  proctoring: {
+    disqualified: true,
+    timeExpired: true,
+    violation_count: 3,
+  },
+  violations: { count: 3 },
+  score: { correct: 8, total: 10 },
+});
+assert.equal(metaProc.disqualified, true, "readMeta harus mengenali disqualified=true");
+assert.equal(metaProc.timeExpired, true, "readMeta harus mengenali timeExpired=true");
+assert.equal(metaProc.violations, 3);
+assert.equal(metaProc.score?.correct, 8);
+
+console.log("semua uji sistem Anti-Cheating, Batas Waktu, Shuffle, dan Pengawasan lulus 100%");

@@ -252,7 +252,19 @@ export async function submitResponse(slug: string, input: unknown): Promise<Subm
           t: l.occurred_at,
         })),
       };
-      metadata.proctoring = { session_id: procSessionId, violation_count: procViolationCount, disqualified };
+      metadata.proctoring = {
+        session_id: procSessionId,
+        violation_count: procViolationCount,
+        disqualified,
+        timeExpired: Boolean(timeUpAuto),
+      };
+    } else if (procSessionId || timeLimit.enabled) {
+      metadata.proctoring = {
+        session_id: procSessionId ?? undefined,
+        violation_count: procViolationCount,
+        disqualified: false,
+        timeExpired: Boolean(timeUpAuto),
+      };
     }
     if (timeMeta) metadata.time_limit = timeMeta;
     if (respondent) metadata.respondent = { email: respondent.email, name: respondent.name };

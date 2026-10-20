@@ -74,6 +74,15 @@ export async function signIn(_prev: AuthState, fd: FormData): Promise<AuthState>
   const parsed = loginSchema.safeParse({ email: values.email, password: str(fd, "password") });
   if (!parsed.success) return { fieldErrors: fieldErrors(parsed.error), values };
 
+  // Pembatas laju percobaan masuk: 10x/menit per IP, 5x/menit per alamat email
+  const ipHash = await getClientIpHash();
+  if (
+    isRateLimited(`signin-ip:${ipHash}`, 10, 60_000) ||
+    isRateLimited(`signin-email:${parsed.data.email}`, 5, 60_000)
+  ) {
+    return { error: "Terlalu banyak percobaan masuk. Tunggu sebentar lalu coba lagi.", values };
+  }
+
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signInWithPassword(parsed.data);
   if (error) {
@@ -180,6 +189,15 @@ export async function forgotPassword(_prev: AuthState, fd: FormData): Promise<Au
   const values = { email: str(fd, "email") };
   const parsed = forgotSchema.safeParse(values);
   if (!parsed.success) return { fieldErrors: fieldErrors(parsed.error), values };
+
+  // Pembatas laju permintaan reset sandi: 5x/menit per IP, 3x/menit per email
+  const ipHash = await getClientIpHash();
+  if (
+    isRateLimited(`forgot-ip:${ipHash}`, 5, 60_000) ||
+    isRateLimited(`forgot-email:${parsed.data.email}`, 3, 60_000)
+  ) {
+    return { error: "Terlalu banyak permintaan reset kata sandi. Tunggu sebentar lalu coba lagi.", values };
+  }
 
   const supabase = await createClient();
   const origin = await siteOrigin();

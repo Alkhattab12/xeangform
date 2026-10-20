@@ -1,8 +1,8 @@
 "use client";
 
-import type { FormSettings, ProctoringSettings } from "@/lib/forms/schema";
-import { DEFAULT_PROCTORING_SETTINGS } from "@/lib/forms/schema";
-import { ShieldAlert, ShieldCheck, AlertTriangle, Monitor, EyeOff, CopySlash } from "lucide-react";
+import type { FormSettings, ProctoringSettings, TimeLimitSettings, ShuffleSettings } from "@/lib/forms/schema";
+import { DEFAULT_PROCTORING_SETTINGS, resolveTimeLimit, resolveShuffle } from "@/lib/forms/schema";
+import { ShieldAlert, ShieldCheck, AlertTriangle, Clock, Shuffle } from "lucide-react";
 
 type Props = { settings: FormSettings; onChange: (patch: Partial<FormSettings>) => void };
 
@@ -13,6 +13,8 @@ const box = "h-5 w-5 shrink-0 accent-[#3457ff]";
 
 export function FormSettingsPanel({ settings, onChange }: Props) {
   const proctoring = settings.proctoring ?? DEFAULT_PROCTORING_SETTINGS;
+  const timeLimit = resolveTimeLimit(settings);
+  const shuffle = resolveShuffle(settings);
 
   const updateProctoring = (patch: Partial<ProctoringSettings>) => {
     const next: ProctoringSettings = { ...proctoring, ...patch };
@@ -22,9 +24,49 @@ export function FormSettingsPanel({ settings, onChange }: Props) {
     });
   };
 
+  const updateTimeLimit = (patch: Partial<TimeLimitSettings>) => {
+    const next: TimeLimitSettings = { ...timeLimit, ...patch };
+    onChange({
+      timeLimit: next,
+      timeLimitMinutes: next.minutes,
+      durationMinutes: next.minutes,
+    });
+  };
+
+  const updateShuffle = (patch: Partial<ShuffleSettings>) => {
+    const next: ShuffleSettings = { ...shuffle, ...patch };
+    onChange({
+      shuffle: next,
+      shuffleQuestions: next.questions,
+      shuffleOptions: next.options,
+    });
+  };
+
+  const showSecurityWarning = (proctoring.enabled || timeLimit.enabled) && !settings.oneResponsePerAccount;
+
   return (
     <div className="nb-panel nb-panel-strong space-y-6 p-4">
       <p className="nb-mono">Pengaturan form</p>
+
+      {/* Warning Banner jika Proctoring atau Batas Waktu aktif tanpa 1 respons per akun */}
+      {showSecurityWarning && (
+        <div role="alert" className="nb-panel border-[3px] border-line bg-amber-300/40 p-3 space-y-2 text-ink">
+          <div className="flex items-center gap-2 font-display font-bold text-amber-900 dark:text-amber-300">
+            <AlertTriangle size={18} className="shrink-0 text-amber-700 dark:text-amber-400" aria-hidden="true" />
+            <span>Peringatan Keamanan Ujian</span>
+          </div>
+          <p className="text-xs leading-relaxed text-ink/90">
+            Fitur <strong>{proctoring.enabled && timeLimit.enabled ? "Anti-Cheating & Batas Waktu" : proctoring.enabled ? "Anti-Cheating" : "Batas Waktu"}</strong> aktif, tetapi <strong>&quot;Batasi 1 respons per akun&quot;</strong> belum dicentang. Peserta anonim dapat membuka mode Incognito atau browser baru untuk mengulang pengerjaan.
+          </p>
+          <button
+            type="button"
+            onClick={() => onChange({ oneResponsePerAccount: true })}
+            className="nb-btn nb-btn-sm text-xs bg-amber-400 text-ink hover:bg-amber-500 font-bold"
+          >
+            Wajibkan Login (1 Respons per Akun)
+          </button>
+        </div>
+      )}
 
       {/* Mode Kuis */}
       <fieldset>
@@ -68,6 +110,98 @@ export function FormSettingsPanel({ settings, onChange }: Props) {
         <p className={hint}>
           Responden wajib masuk dengan akun. Akun yang sama tidak bisa mengisi lagi.
         </p>
+      </div>
+
+      <hr className="border-t-2 border-line/40 my-4" />
+
+      {/* Batas Waktu Ujian (Time Limit) */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Clock className={`shrink-0 ${timeLimit.enabled ? "text-cobalt" : "text-line"}`} size={20} aria-hidden="true" />
+          <span className="font-display font-bold text-lg">Batas Waktu Ujian</span>
+        </div>
+
+        <div className="nb-panel p-3 bg-surface border-2 border-line space-y-3">
+          <label className={choice}>
+            <input
+              type="checkbox"
+              className={box}
+              checked={timeLimit.enabled}
+              onChange={(e) => updateTimeLimit({ enabled: e.target.checked })}
+            />
+            <span className="font-bold">Aktifkan Batas Waktu Ujian</span>
+          </label>
+          <p className={hint}>
+            Peserta harus menyelesaikan ujian dalam durasi waktu tertentu. Penghitung mundur ditampilkan secara real-time dan otomatis mengirim jawaban terakhir saat waktu habis.
+          </p>
+
+          {timeLimit.enabled && (
+            <div className="pt-2 border-t border-line/40 space-y-2">
+              <label htmlFor="time-limit-input" className="block font-semibold text-sm">
+                Durasi Ujian (Menit)
+              </label>
+              <div className="flex items-center gap-3">
+                <input
+                  id="time-limit-input"
+                  type="number"
+                  min={1}
+                  max={720}
+                  className="nb-input w-28 py-1.5 px-3 font-mono font-bold text-center"
+                  value={timeLimit.minutes}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    if (!isNaN(val) && val >= 1 && val <= 720) {
+                      updateTimeLimit({ minutes: val, timeLimitMinutes: val, durationMinutes: val });
+                    }
+                  }}
+                />
+                <span className="text-sm text-ink/70">menit (1 - 720 menit)</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <hr className="border-t-2 border-line/40 my-4" />
+
+      {/* Acak Urutan Soal & Pilihan Jawaban (Shuffle) */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Shuffle className={`shrink-0 ${shuffle.questions || shuffle.options ? "text-cobalt" : "text-line"}`} size={20} aria-hidden="true" />
+          <span className="font-display font-bold text-lg">Acak Urutan (Shuffle)</span>
+        </div>
+
+        <div className="nb-panel p-3 bg-surface border-2 border-line space-y-3">
+          <p className={hint + " mt-0 mb-2"}>
+            Urutan diacak secara deterministik per peserta (berbeda antar-peserta, namun konsisten dan tidak berubah saat peserta me-refresh halaman).
+          </p>
+
+          <label className={choice}>
+            <input
+              type="checkbox"
+              className={box}
+              checked={shuffle.questions}
+              onChange={(e) => updateShuffle({ questions: e.target.checked, shuffleQuestions: e.target.checked })}
+            />
+            <div>
+              <span className="font-bold text-sm">Acak Urutan Soal</span>
+              <p className="text-xs text-ink/70">Urutan soal akan diacak di setiap halaman (tata letak/bagian tetap di tempatnya).</p>
+            </div>
+          </label>
+
+          <label className={choice}>
+            <input
+              type="checkbox"
+              className={box}
+              checked={shuffle.options}
+              onChange={(e) => updateShuffle({ options: e.target.checked, shuffleOptions: e.target.checked })}
+            />
+            <div>
+              <span className="font-bold text-sm">Acak Pilihan Jawaban</span>
+              <p className="text-xs text-ink/70">Pilihan jawaban (pilihan ganda, checkbox, dropdown) akan diacak per soal.</p>
+            </div>
+          </label>
+        </div>
       </div>
 
       <hr className="border-t-2 border-line/40 my-4" />

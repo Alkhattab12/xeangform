@@ -5,12 +5,14 @@ export type ResponseMeta = {
   score?: { correct: number; total: number };
   violations?: number;
   respondent?: { email?: string; name?: string };
+  disqualified?: boolean;
+  timeExpired?: boolean;
 };
 export type ResponseRow = { id: string; submitted_at: string; answers: Record<string, unknown>; meta: ResponseMeta };
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
-/** Membaca metadata respons secara defensif (skor, jumlah pindah tab, akun). */
+/** Membaca metadata respons secara defensif (skor, jumlah pelanggaran/pindah tab, akun, diskualifikasi, waktu habis). */
 export function readMeta(raw: unknown): ResponseMeta {
   const m: ResponseMeta = {};
   if (!isObj(raw)) return m;
@@ -18,6 +20,21 @@ export function readMeta(raw: unknown): ResponseMeta {
   if (isObj(sc) && typeof sc.correct === "number" && typeof sc.total === "number") m.score = { correct: sc.correct, total: sc.total };
   const vi = raw.violations;
   if (isObj(vi) && typeof vi.count === "number") m.violations = vi.count;
+
+  const proc = raw.proctoring;
+  if (isObj(proc)) {
+    if (typeof proc.violation_count === "number" && m.violations === undefined) {
+      m.violations = proc.violation_count;
+    }
+    m.disqualified = proc.disqualified === true;
+    if (proc.timeExpired === true) m.timeExpired = true;
+  }
+
+  const tl = raw.time_limit;
+  if (isObj(tl)) {
+    if (tl.auto_submitted === true || tl.timeExpired === true) m.timeExpired = true;
+  }
+
   const re = raw.respondent;
   if (isObj(re)) {
     m.respondent = {

@@ -37,32 +37,85 @@ const subs = Array.from({ length: 28 }, (_, i) => {
   };
 });
 const quizForm = { ...mk(F3, "kuis-matematika", "Kuis Matematika X", { preset: "neo" }), schema_json: { fields: quizFields }, settings_json: { quiz: true }, form_submissions: [{ count: subs.length }] };
-const tables = { forms: [...forms, quizForm], profiles: [{ id: USER.id, display_name: "etherealrexx" }], form_submissions: subs, submission_files: [], notifications: [], user_audio_tracks: [] };
+const F4 = "44444444-4444-4444-8444-444444444444";
+const examForm = {
+  ...mk(F4, "ujian-proctoring", "Ujian Matematika & Logika", { preset: "neo" }),
+  schema_json: { fields: quizFields },
+  settings_json: {
+    quiz: true,
+    proctoring: { enabled: true, maxViolations: 3, detectTabSwitch: true, detectWindowBlur: true, autoSubmitOnDisqualify: true },
+    timeLimit: { enabled: true, minutes: 30 },
+    shuffle: { questions: true, options: true },
+  },
+  form_submissions: [],
+};
+const tables = { forms: [...forms, quizForm, examForm], profiles: [{ id: USER.id, display_name: "etherealrexx" }], form_submissions: subs, submission_files: [], notifications: [], user_audio_tracks: [], proctoring_sessions: [], proctoring_logs: [] };
 http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
   const send = (code, body, extra = {}) => { res.writeHead(code, { "content-type": "application/json; charset=utf-8", ...extra }); res.end(body === undefined ? "" : JSON.stringify(body)); };
-  if (u.pathname === "/__fixture") return send(200, { subs, quizFields });
+  if (u.pathname === "/__fixture") return send(200, { subs, quizFields, examForm });
   if (u.pathname === "/auth/v1/user") return send(200, USER);
   if (u.pathname.startsWith("/auth/v1/")) return send(200, {});
   const m = u.pathname.match(/^\/rest\/v1\/(\w+)/);
   if (!m) return send(404, { message: "no" });
-  if (req.method !== "GET" && req.method !== "HEAD") { req.resume(); return send(req.method === "POST" ? 201 : 204); }
-  if (u.searchParams.get("slug") === "eq.kaboom-form") { req.resume(); return send(500, { message: "db down (simulasi)" }); }
-  let rows = [...(tables[m[1]] ?? [])];
-  for (const [k, v] of u.searchParams) {
-    const eq = String(v).match(/^eq\.(.*)$/);
-    if (eq && rows[0] && k in rows[0]) rows = rows.filter((r) => String(r[k]) === eq[1]);
-    const rg = String(v).match(/^(gte|lte)\.(.*)$/);
-    if (rg && rows[0] && k in rows[0]) rows = rows.filter((r) => (rg[1] === "gte" ? Date.parse(r[k]) >= Date.parse(rg[2]) : Date.parse(r[k]) <= Date.parse(rg[2])));
-    const neq = String(v).match(/^neq\.(.*)$/);
-    if (neq && rows[0] && k in rows[0]) rows = rows.filter((r) => String(r[k]) !== neq[1]);
-  }
-  const ord = u.searchParams.get("order");
-  if (ord) { const [col, dir] = ord.split("."); rows.sort((a, b) => (Date.parse(a[col]) - Date.parse(b[col])) * (dir === "desc" ? -1 : 1)); }
-  const total = rows.length;
-  const lim = Number(u.searchParams.get("limit")); if (lim > 0) rows = rows.slice(Number(u.searchParams.get("offset") || 0), Number(u.searchParams.get("offset") || 0) + lim);
-  const prefer = String(req.headers.prefer ?? "");
-  const headers = prefer.includes("count") ? { "content-range": total ? `0-${Math.max(0, rows.length - 1)}/${total}` : "*/0" } : {};
-  if (String(req.headers.accept ?? "").includes("vnd.pgrst.object")) return rows.length ? send(200, rows[0], headers) : send(406, { code: "PGRST116", message: "0 rows" });
-  return send(200, rows, headers);
+
+  const chunks = [];
+  req.on("data", (c) => chunks.push(c));
+  req.on("end", () => {
+    let body = null;
+    try {
+      const txt = Buffer.concat(chunks).toString();
+      if (txt) body = JSON.parse(txt);
+    } catch {}
+
+    if (req.method === "POST") {
+      const tbl = tables[m[1]] ?? (tables[m[1]] = []);
+      const item = { id: `mock-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, created_at: new Date().toISOString(), ...(body || {}) };
+      tbl.push(item);
+      if (String(req.headers.prefer ?? "").includes("return=representation") || String(req.headers.accept ?? "").includes("vnd.pgrst.object")) {
+        return send(201, item);
+      }
+      return send(201, [item]);
+    }
+
+    if (req.method === "PATCH") {
+      const tbl = tables[m[1]] ?? [];
+      const updated = [];
+      for (const row of tbl) {
+        let match = true;
+        for (const [k, v] of u.searchParams) {
+          const eq = String(v).match(/^eq\.(.*)$/);
+          if (eq && String(row[k]) !== eq[1]) match = false;
+        }
+        if (match) {
+          Object.assign(row, body || {});
+          row.updated_at = new Date().toISOString();
+          updated.push(row);
+        }
+      }
+      if (String(req.headers.prefer ?? "").includes("return=representation") || String(req.headers.accept ?? "").includes("vnd.pgrst.object")) {
+        return send(200, updated[0] || body);
+      }
+      return send(200, updated);
+    }
+
+    if (u.searchParams.get("slug") === "eq.kaboom-form") { return send(500, { message: "db down (simulasi)" }); }
+    let rows = [...(tables[m[1]] ?? [])];
+    for (const [k, v] of u.searchParams) {
+      const eq = String(v).match(/^eq\.(.*)$/);
+      if (eq && rows[0] && k in rows[0]) rows = rows.filter((r) => String(r[k]) === eq[1]);
+      const rg = String(v).match(/^(gte|lte)\.(.*)$/);
+      if (rg && rows[0] && k in rows[0]) rows = rows.filter((r) => (rg[1] === "gte" ? Date.parse(r[k]) >= Date.parse(rg[2]) : Date.parse(r[k]) <= Date.parse(rg[2])));
+      const neq = String(v).match(/^neq\.(.*)$/);
+      if (neq && rows[0] && k in rows[0]) rows = rows.filter((r) => String(r[k]) !== neq[1]);
+    }
+    const ord = u.searchParams.get("order");
+    if (ord) { const [col, dir] = ord.split("."); rows.sort((a, b) => (Date.parse(a[col]) - Date.parse(b[col])) * (dir === "desc" ? -1 : 1)); }
+    const total = rows.length;
+    const lim = Number(u.searchParams.get("limit")); if (lim > 0) rows = rows.slice(Number(u.searchParams.get("offset") || 0), Number(u.searchParams.get("offset") || 0) + lim);
+    const prefer = String(req.headers.prefer ?? "");
+    const headers = prefer.includes("count") ? { "content-range": total ? `0-${Math.max(0, rows.length - 1)}/${total}` : "*/0" } : {};
+    if (String(req.headers.accept ?? "").includes("vnd.pgrst.object")) return rows.length ? send(200, rows[0], headers) : send(406, { code: "PGRST116", message: "0 rows" });
+    return send(200, rows, headers);
+  });
 }).listen(54321, "127.0.0.1", () => console.log("mock supabase :54321"));

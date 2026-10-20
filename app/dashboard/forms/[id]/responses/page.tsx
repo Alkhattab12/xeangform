@@ -146,11 +146,27 @@ export default async function ResponsesPage({
                     <li key={r.id} className="nb-panel nb-panel-strong nb-shadow flex items-start gap-3 p-4 min-w-0 max-w-full">
                       <input type="checkbox" form="bulk" name="ids" value={r.id} aria-label={`Pilih respons ${when}`} className="mt-1 h-5 w-5 shrink-0 accent-[#3457ff]" />
                       <Link href={`${base}/${r.id}${qs ? `?${qs}` : ""}`} className="min-w-0 flex-1">
-                        <span className="nb-mono block break-words">
-                          {when}
-                          {r.meta.score ? ` · Benar ${r.meta.score.correct}/${r.meta.score.total}` : ""}
-                          {r.meta.violations ? ` · Pindah tab ${r.meta.violations}×` : ""}
-                        </span>
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          <span className="nb-mono block break-words">
+                            {when}
+                            {r.meta.score ? ` · Benar ${r.meta.score.correct}/${r.meta.score.total}` : ""}
+                          </span>
+                          {r.meta.disqualified && (
+                            <span className="nb-mono text-xs font-bold px-2 py-0.5 border-2 border-line bg-red-600 text-white shadow-[2px_2px_0px_#000]">
+                              Didiskualifikasi ({r.meta.violations ?? 0} pelanggaran)
+                            </span>
+                          )}
+                          {r.meta.timeExpired && (
+                            <span className="nb-mono text-xs font-bold px-2 py-0.5 border-2 border-line bg-amber-400 text-ink shadow-[2px_2px_0px_#000]">
+                              Waktu Habis (Otomatis)
+                            </span>
+                          )}
+                          {!r.meta.disqualified && !r.meta.timeExpired && r.meta.violations ? (
+                            <span className="nb-mono text-xs font-bold px-2 py-0.5 border-2 border-line bg-lavender text-ink">
+                              Pindah tab {r.meta.violations}×
+                            </span>
+                          ) : null}
+                        </div>
                         {r.meta.respondent?.email && <span className="nb-mono block break-words">{r.meta.respondent.email}</span>}
                         {preview.length === 0 ? (
                           <span className="mt-1 block opacity-70">(tidak ada jawaban yang terisi)</span>

@@ -4,8 +4,10 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { submitResponse, type QuizResult } from "@/app/actions/submit";
 import { useBusyOverlay } from "@/components/ui/LoadingProvider";
 import { firstErrorFieldId, pageIndexOf, splitPages } from "@/lib/forms/pages";
-import { isInputType, parseSettings, type FormField, type FormSettings } from "@/lib/forms/schema";
+import { isInputType, parseSettings, resolveTimeLimit, resolveShuffle, type FormField, type FormSettings } from "@/lib/forms/schema";
 import { DEFAULT_PROCTORING_SETTINGS } from "@/lib/forms/schema";
+import { formatClock } from "@/lib/forms/time-limit";
+import { shufflePages, optionsForDisplay } from "@/lib/forms/shuffle";
 import { fieldStyleVars, labelSizeClass } from "@/lib/forms/theme";
 import { OTHER, validateAnswers } from "@/lib/forms/validate";
 import { MiniAudioPlayer } from "./MiniAudioPlayer";
@@ -14,7 +16,7 @@ import type { ThemePreset } from "@/lib/forms/schema";
 import { GateCard } from "./GateCard";
 import { FileUploadField } from "./FileUploadField";
 import type { UploadedFile } from "@/lib/forms/files";
-import { ShieldAlert, AlertTriangle, Maximize2 } from "lucide-react";
+import { ShieldAlert, AlertTriangle, Maximize2, Clock } from "lucide-react";
 import { initProctoringSession, recordProctoringViolation } from "@/app/actions/proctoring";
 
 type Props = {
@@ -66,8 +68,21 @@ export function PublicForm({ slug, title, description, fields, settings: rawSett
   const settings = useMemo(() => parseSettings(rawSettings), [rawSettings]);
   const proctoring = settings.proctoring ?? DEFAULT_PROCTORING_SETTINGS;
   const isProctoring = Boolean(proctoring.enabled);
+  const timeLimit = useMemo(() => resolveTimeLimit(settings), [settings]);
+  const isTimeLimit = Boolean(timeLimit.enabled);
+  const isProtectedExam = isProctoring || isTimeLimit;
 
-  const pages = useMemo(() => splitPages(fields), [fields]);
+  const [sessionKey, setSessionKey] = useState<string>("");
+  const keyRef = useRef<string | null>(null);
+
+  // Pengacakan deterministik (seeded): urutan konsisten per peserta meski halaman di-refresh
+  const shuffleSeed = useMemo(() => `${slug}:${sessionKey || "init"}`, [slug, sessionKey]);
+  const rawPages = useMemo(() => splitPages(fields), [fields]);
+  const pages = useMemo(() => {
+    if (!settings.shuffle?.questions) return rawPages;
+    return shufflePages(rawPages, shuffleSeed);
+  }, [rawPages, shuffleSeed, settings.shuffle?.questions]);
+
   const [pageIdx, setPageIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -75,7 +90,6 @@ export function PublicForm({ slug, title, description, fields, settings: rawSett
   const [formError, setFormError] = useState("");
   const [hp, setHp] = useState("");
   const [result, setResult] = useState<QuizResult | null>(null);
-  const keyRef = useRef<string | null>(null);
   const pendingFocus = useRef<string | null>(null);
   const firstRender = useRef(true);
   useBusyOverlay(status === "submitting");
@@ -84,7 +98,7 @@ export function PublicForm({ slug, title, description, fields, settings: rawSett
   const current = pages[Math.min(pageIdx, pages.length - 1)];
 
   // Sesi ujian & pengawasan
-  const [examStarted, setExamStarted] = useState(!isProctoring);
+  const [examStarted, setExamStarted] = useState(!isProtectedExam);
   const [vCount, setVCount] = useState(0);
   const [warningModal, setWarningModal] = useState<{
     show: boolean;
@@ -101,10 +115,61 @@ export function PublicForm({ slug, title, description, fields, settings: rawSett
   const answersRef = useRef<Record<string, unknown>>({});
   const autoSubmitRef = useRef(false);
 
-  // Jawaban terbaru disimpan di ref agar bisa dikirim otomatis saat peserta didiskualifikasi
+  // Batas waktu pengerjaan (Countdown Timer)
+  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
+  const deadlineRef = useRef<number | null>(null);
+  const [timeExpiredNotice, setTimeExpiredNotice] = useState(false);
+  const timeExpiredRef = useRef(false);
+
+  // Jawaban terbaru disimpan di ref agar bisa dikirim otomatis saat peserta didiskualifikasi / waktu habis
   useEffect(() => {
     answersRef.current = answers;
   }, [answers]);
+
+  // Pengiriman otomatis saat batas waktu habis
+  const submitTimeExpired = useCallback(async () => {
+    if (timeExpiredRef.current || autoSubmitRef.current || !keyRef.current) return;
+    timeExpiredRef.current = true;
+    autoSubmitRef.current = true;
+    setStatus("submitting");
+    try {
+      const res = await submitResponse(slug, {
+        answers: answersRef.current,
+        clientKey: keyRef.current,
+        timeUp: true,
+        website: hp,
+      });
+      if (res.ok) {
+        if (settings.audio?.sfxEnabled) playTactileSfx("success");
+        setResult(res.result ?? null);
+      }
+      setTimeExpiredNotice(true);
+      setStatus("done");
+    } catch (err) {
+      console.error("time_limit_auto_submit_failed", err);
+      setTimeExpiredNotice(true);
+      setStatus("done");
+    }
+  }, [slug, hp, settings.audio?.sfxEnabled]);
+
+  // Interval penghitung mundur real-time
+  useEffect(() => {
+    if (!isTimeLimit || !examStarted || status === "done" || status === "blocked") return;
+
+    const tick = () => {
+      if (deadlineRef.current === null) return;
+      const now = Date.now();
+      const diff = Math.max(0, Math.ceil((deadlineRef.current - now) / 1000));
+      setRemainingSeconds(diff);
+      if (diff <= 0) {
+        void submitTimeExpired();
+      }
+    };
+
+    tick();
+    const interval = setInterval(tick, 500);
+    return () => clearInterval(interval);
+  }, [isTimeLimit, examStarted, status, submitTimeExpired]);
 
   // Inisialisasi session key peserta & verifikasi status awal dari server
   useEffect(() => {
@@ -116,8 +181,9 @@ export function PublicForm({ slug, title, description, fields, settings: rawSett
       sessionStorage.setItem(storageKey, k);
     }
     keyRef.current = k;
+    setSessionKey(k);
 
-    if (isProctoring) {
+    if (isProtectedExam) {
       const startedKey = `xean_started_${slug}`;
       const alreadyStarted = sessionStorage.getItem(startedKey) === "true";
       if (alreadyStarted) setExamStarted(true);
@@ -131,7 +197,7 @@ export function PublicForm({ slug, title, description, fields, settings: rawSett
         setProcError(message);
       };
 
-      initProctoringSession(slug, k)
+      initProctoringSession(slug, k, undefined, false)
         .then((res) => {
           if (!res.ok) {
             failClosed(res.error);
@@ -145,11 +211,19 @@ export function PublicForm({ slug, title, description, fields, settings: rawSett
               setVCount(res.violationCount);
               countRef.current = res.violationCount;
             }
+            if (typeof res.remainingMs === "number") {
+              deadlineRef.current = Date.now() + res.remainingMs;
+              const s = Math.max(0, Math.ceil(res.remainingMs / 1000));
+              setRemainingSeconds(s);
+              if (res.remainingMs <= 0 && alreadyStarted) {
+                void submitTimeExpired();
+              }
+            }
           }
         })
-        .catch(() => failClosed("Koneksi ke server pengawasan bermasalah. Coba lagi."));
+        .catch(() => failClosed("Koneksi ke server ujian bermasalah. Coba lagi."));
     }
-  }, [slug, isProctoring]);
+  }, [slug, isProtectedExam, submitTimeExpired]);
 
   // Jika pemilik form mengaktifkan "kirim otomatis saat diskualifikasi", jawaban parsial dikirim sekali
   const submitDisqualified = useCallback(async () => {
@@ -331,8 +405,9 @@ export function PublicForm({ slug, title, description, fields, settings: rawSett
         sessionStorage.setItem(`xean_session_${slug}`, currentKey);
       }
 
-      // Fail-closed: pengerjaan hanya dimulai jika sesi pengawasan terdaftar di server
-      const res = await initProctoringSession(slug, currentKey);
+      // Fail-closed: pengerjaan hanya dimulai jika sesi ujian terdaftar di server
+      // begin = true mencap started_at SEKALI di server untuk batas waktu
+      const res = await initProctoringSession(slug, currentKey, undefined, true);
       if (!res.ok) {
         leaveFullscreen();
         setProcError(res.error);
@@ -348,13 +423,17 @@ export function PublicForm({ slug, title, description, fields, settings: rawSett
         countRef.current = res.violationCount;
         setVCount(res.violationCount);
       }
+      if (typeof res.remainingMs === "number") {
+        deadlineRef.current = Date.now() + res.remainingMs;
+        setRemainingSeconds(Math.max(0, Math.ceil(res.remainingMs / 1000)));
+      }
       if (typeof window !== "undefined") {
         sessionStorage.setItem(`xean_started_${slug}`, "true");
       }
       setExamStarted(true);
     } catch {
       leaveFullscreen();
-      setProcError("Koneksi bermasalah. Sesi pengawasan belum bisa dimulai, coba lagi.");
+      setProcError("Koneksi bermasalah. Sesi ujian belum bisa dimulai, coba lagi.");
     } finally {
       setStarting(false);
     }
@@ -483,20 +562,25 @@ export function PublicForm({ slug, title, description, fields, settings: rawSett
     setErrors({});
     setFormError("");
     setResult(null);
+    setTimeExpiredNotice(false);
+    setRemainingSeconds(null);
+    deadlineRef.current = null;
+    timeExpiredRef.current = false;
+    autoSubmitRef.current = false;
 
-    // Respons berikutnya memakai kunci sesi baru. Pada form ber-proctoring peserta kembali ke briefing,
-    // sehingga startExam mendaftarkan sesi baru di server sebelum pengerjaan dimulai.
+    // Respons berikutnya memakai kunci sesi baru. Pada form ber-proctoring atau berbatas waktu,
+    // peserta kembali ke briefing sehingga startExam mendaftarkan sesi baru di server sebelum pengerjaan dimulai.
     const nk = crypto.randomUUID();
     keyRef.current = nk;
+    setSessionKey(nk);
     if (typeof window !== "undefined") {
       sessionStorage.setItem(`xean_session_${slug}`, nk);
       sessionStorage.removeItem(`xean_started_${slug}`);
     }
-    autoSubmitRef.current = false;
     countRef.current = 0;
     setVCount(0);
     setProcError("");
-    setExamStarted(!isProctoring);
+    setExamStarted(!isProtectedExam);
     setPageIdx(0);
     setStatus("idle");
   }
@@ -516,55 +600,69 @@ export function PublicForm({ slug, title, description, fields, settings: rawSett
   if (status === "login") return <GateCard kind="login" slug={slug} title={title} />;
 
   // Layar Briefing / Persetujuan Ujian sebelum pengerjaan dimulai
-  if (proctoring.enabled && !examStarted) {
+  if (isProtectedExam && !examStarted) {
     return (
       <div className="nb-panel nb-panel-strong nb-shadow space-y-6 p-6 sm:p-8">
         <div className="flex items-center gap-3 text-orange">
-          <ShieldAlert size={32} strokeWidth={2.5} aria-hidden="true" />
+          {isProctoring ? (
+            <ShieldAlert size={32} strokeWidth={2.5} aria-hidden="true" />
+          ) : (
+            <Clock size={32} strokeWidth={2.5} className="text-cobalt" aria-hidden="true" />
+          )}
           <h1 className="font-display text-2xl sm:text-3xl font-bold text-ink">
-            Pengawasan Ujian & Anti-Cheating
+            {isProctoring ? "Pengawasan Ujian & Anti-Cheating" : "Ujian Berbatas Waktu"}
           </h1>
         </div>
-        <div className="border-l-4 border-orange pl-4 space-y-2 text-ink">
-          <p className="font-bold">Formulir &quot;{title}&quot; mengaktifkan sistem pengawasan keamanan.</p>
+        <div className={`border-l-4 ${isProctoring ? "border-orange" : "border-cobalt"} pl-4 space-y-2 text-ink`}>
+          <p className="font-bold">Formulir &quot;{title}&quot; {isProctoring ? "mengaktifkan sistem pengawasan keamanan." : `memiliki batas waktu pengerjaan selama ${timeLimit.minutes} menit.`}</p>
           <p className="text-sm leading-relaxed text-ink/80">
-            Sistem memantau aktivitas pengerjaan Anda dan otomatis mendiskualifikasi sesi jika terdeteksi aktivitas kecurangan berulang.
+            {isProctoring
+              ? "Sistem memantau aktivitas pengerjaan Anda dan otomatis mendiskualifikasi sesi jika terdeteksi aktivitas kecurangan berulang."
+              : `Waktu pengerjaan akan dihitung secara real-time dari server begitu Anda menekan tombol Mulai di bawah. Jika waktu mencapai 00:00, jawaban terakhir akan otomatis dikirim.`}
           </p>
         </div>
 
         <div className="nb-panel p-4 bg-paper/60 space-y-3">
           <p className="nb-mono text-xs uppercase tracking-wider font-bold">Aturan Selama Pengerjaan Ujian:</p>
           <ul className="space-y-2 text-sm text-ink">
-            {proctoring.detectTabSwitch && (
+            {isTimeLimit && (
+              <li className="flex items-start gap-2">
+                <span className="text-orange font-bold">•</span>
+                <span><strong>Batas Waktu {timeLimit.minutes} Menit</strong>: Waktu mulai berjalan begitu tombol Mulai ditekan. Memuat ulang (refresh) halaman tidak me-reset waktu. Saat waktu habis, jawaban otomatis dikirimkan.</span>
+              </li>
+            )}
+            {isProctoring && proctoring.detectTabSwitch && (
               <li className="flex items-start gap-2">
                 <span className="text-orange font-bold">•</span>
                 <span><strong>Dilarang berpindah tab browser</strong>: Meninggalkan tab ujian akan dicatat sebagai pelanggaran.</span>
               </li>
             )}
-            {proctoring.detectWindowBlur && (
+            {isProctoring && proctoring.detectWindowBlur && (
               <li className="flex items-start gap-2">
                 <span className="text-orange font-bold">•</span>
                 <span><strong>Fokus jendela penuh</strong>: Dilarang beralih ke aplikasi lain (Alt-Tab atau meminimalkan jendela).</span>
               </li>
             )}
-            {proctoring.requireFullscreen && (
+            {isProctoring && proctoring.requireFullscreen && (
               <li className="flex items-start gap-2">
                 <span className="text-orange font-bold">•</span>
                 <span><strong>Mode layar penuh wajib</strong>: Menekan tombol Esc atau keluar dari fullscreen akan dicatat.</span>
               </li>
             )}
-            {proctoring.restrictCopyPaste && (
+            {isProctoring && proctoring.restrictCopyPaste && (
               <li className="flex items-start gap-2">
                 <span className="text-orange font-bold">•</span>
                 <span><strong>Salin-tempel dibatasi</strong>: Aksi copy, paste, dan klik kanan dinonaktifkan di area pengerjaan.</span>
               </li>
             )}
-            <li className="flex items-start gap-2 pt-2 border-t border-line/30">
-              <span className="text-[#c62f00] font-bold">⚠</span>
-              <span className="font-bold text-[#c62f00]">
-                Batas Pelanggaran: Maksimal {proctoring.maxViolations} kali pelanggaran valid sebelum akses Anda diblokir otomatis.
-              </span>
-            </li>
+            {isProctoring && (
+              <li className="flex items-start gap-2 pt-2 border-t border-line/30">
+                <span className="text-[#c62f00] font-bold">⚠</span>
+                <span className="font-bold text-[#c62f00]">
+                  Batas Pelanggaran: Maksimal {proctoring.maxViolations} kali pelanggaran valid sebelum akses Anda diblokir otomatis.
+                </span>
+              </li>
+            )}
           </ul>
         </div>
 
@@ -581,7 +679,7 @@ export function PublicForm({ slug, title, description, fields, settings: rawSett
           >
             {starting ? (
               <>Memverifikasi sesi…</>
-            ) : proctoring.requireFullscreen ? (
+            ) : isProctoring && proctoring.requireFullscreen ? (
               <>
                 <Maximize2 size={18} aria-hidden="true" /> Masuk Layar Penuh & Mulai Ujian
               </>
@@ -598,9 +696,13 @@ export function PublicForm({ slug, title, description, fields, settings: rawSett
     return (
       <>
         <div className="nb-panel nb-panel-strong nb-shadow bg-accent p-6 text-[color:var(--on-accent)] sm:p-8" role="status">
-          <p className="nb-mono mb-3">Terkirim</p>
-          <h1 className="font-display text-4xl font-bold">Terima kasih!</h1>
-          <p className="mt-5 leading-relaxed">Jawabanmu untuk &quot;{title}&quot; sudah tersimpan.</p>
+          <p className="nb-mono mb-3">{timeExpiredNotice ? "Waktu Habis" : "Terkirim"}</p>
+          <h1 className="font-display text-4xl font-bold">{timeExpiredNotice ? "Waktu Ujian Berakhir" : "Terima kasih!"}</h1>
+          <p className="mt-5 leading-relaxed">
+            {timeExpiredNotice
+              ? `Batas waktu pengerjaan untuk "${title}" telah habis. Jawaban yang sempat Anda isi sudah tersimpan otomatis di server.`
+              : `Jawabanmu untuk "${title}" sudah tersimpan.`}
+          </p>
           {result && result.total > 0 && (
             <p className="mt-8 border-t-[3px] border-current pt-6 font-display text-4xl font-bold">
               Benar {result.correct} dari {result.total} soal
@@ -670,12 +772,13 @@ export function PublicForm({ slug, title, description, fields, settings: rawSett
 
     if (f.type === "radio") {
       const v = (answers[f.id] as ChoiceAnswer | undefined) ?? {};
+      const displayOpts = optionsForDisplay(f, shuffleSeed, Boolean(settings.shuffle?.options));
       return wrap(
         <fieldset id={id} tabIndex={-1} aria-describedby={describedBy} aria-invalid={invalid} className={groupCls}>
           <legend className={`${lblCls} p-0`}>{f.label}{reqMark(f)}</legend>
           {desc}
           <div className="space-y-1">
-            {(f.options ?? []).map((o) => (
+            {displayOpts.map((o) => (
               <label key={o.id} className={choice}>
                 <input type="radio" name={f.id} className={box} checked={v.optionId === o.id} onChange={() => set(f.id, { ...v, optionId: o.id })} />
                 {o.label}
@@ -702,12 +805,13 @@ export function PublicForm({ slug, title, description, fields, settings: rawSett
       const v = (answers[f.id] as MultiAnswer | undefined) ?? {};
       const ids = v.optionIds ?? [];
       const toggle = (oid: string, on: boolean) => set(f.id, { ...v, optionIds: on ? [...ids, oid] : ids.filter((x) => x !== oid) });
+      const displayOpts = optionsForDisplay(f, shuffleSeed, Boolean(settings.shuffle?.options));
       return wrap(
         <fieldset id={id} tabIndex={-1} aria-describedby={describedBy} aria-invalid={invalid} className={groupCls}>
           <legend className={`${lblCls} p-0`}>{f.label}{reqMark(f)}</legend>
           {desc}
           <div className="space-y-1">
-            {(f.options ?? []).map((o) => (
+            {displayOpts.map((o) => (
               <label key={o.id} className={choice}>
                 <input type="checkbox" className={box} checked={ids.includes(o.id)} onChange={(e) => toggle(o.id, e.target.checked)} />
                 {o.label}
@@ -827,12 +931,13 @@ export function PublicForm({ slug, title, description, fields, settings: rawSett
     }
     if (f.type === "dropdown") {
       const cur = (answers[f.id] as ChoiceAnswer | undefined)?.optionId ?? "";
+      const displayOpts = optionsForDisplay(f, shuffleSeed, Boolean(settings.shuffle?.options));
       return wrap(
         <>
           {label}{desc}
           <select {...common} className="nb-input" value={cur} onChange={(e) => set(f.id, { optionId: e.target.value })}>
             <option value="">Pilih salah satu…</option>
-            {(f.options ?? []).map((o) => (<option key={o.id} value={o.id}>{o.label}</option>))}
+            {displayOpts.map((o) => (<option key={o.id} value={o.id}>{o.label}</option>))}
           </select>
           {errEl}
         </>,
@@ -863,6 +968,30 @@ export function PublicForm({ slug, title, description, fields, settings: rawSett
   return (
     <>
       <form onSubmit={onSubmit} noValidate className="flex flex-col gap-6 sm:gap-8">
+        {isTimeLimit && examStarted && remainingSeconds !== null && (
+          <div
+            className={`sticky top-3 z-30 flex items-center justify-between gap-3 border-[3px] border-line px-4 py-3 font-bold shadow-[3px_3px_0px_#000] ${
+              remainingSeconds <= 60
+                ? "bg-red-500 text-white animate-pulse"
+                : remainingSeconds <= 300
+                  ? "bg-amber-300 text-ink"
+                  : "bg-surface text-ink"
+            }`}
+            role="timer"
+            aria-live="polite"
+          >
+            <div className="flex items-center gap-2">
+              <Clock size={20} className="shrink-0" aria-hidden="true" />
+              <span className="nb-mono text-xs uppercase tracking-wider font-extrabold">
+                {remainingSeconds <= 60 ? "WAKTU HAMPIR HABIS" : "SISA WAKTU"}
+              </span>
+            </div>
+            <span className="nb-mono text-2xl font-extrabold tracking-widest">
+              {formatClock(remainingSeconds)}
+            </span>
+          </div>
+        )}
+
         {pageIdx === 0 ? (
           <header className="nb-panel nb-panel-strong nb-shadow p-6 sm:p-8">
             {settings.quiz && <p className="nb-mono mb-3">Kuis</p>}

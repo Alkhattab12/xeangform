@@ -30,7 +30,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const settings = parseSettings(form.settings_json);
   const csv = buildCsv(parsed.data.fields, res.rows, {
     quiz: settings.quiz,
-    proctor: !settings.allowTabSwitch,
+    proctor: !settings.allowTabSwitch || settings.proctoring.enabled || settings.timeLimit.enabled,
     accounts: settings.oneResponsePerAccount,
   });
   const stamp = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);

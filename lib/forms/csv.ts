@@ -30,14 +30,21 @@ export function buildCsv(fields: FormField[], rows: ResponseRow[], opts: CsvOpti
   const extra: string[] = [];
   if (opts.accounts) extra.push("Akun (email)", "Nama akun");
   if (opts.quiz) extra.push("Benar", "Total soal");
-  if (opts.proctor) extra.push("Pindah tab/jendela (kali)");
+  if (opts.proctor) extra.push("Status Ujian", "Pelanggaran (kali)");
 
   const lines = [["ID respons", "Waktu kirim (WIB)", ...extra, ...headers].map((h) => cell(h, true)).join(",")];
   for (const r of rows) {
     const cells = [cell(r.id, false), cell(wib(r.submitted_at), false)];
     if (opts.accounts) cells.push(cell(r.meta.respondent?.email ?? "", true), cell(r.meta.respondent?.name ?? "", true));
     if (opts.quiz) cells.push(r.meta.score ? String(r.meta.score.correct) : "", r.meta.score ? String(r.meta.score.total) : "");
-    if (opts.proctor) cells.push(r.meta.violations !== undefined ? String(r.meta.violations) : "");
+    if (opts.proctor) {
+      const statusText = r.meta.disqualified
+        ? `Didiskualifikasi (${r.meta.violations ?? 0} pelanggaran)`
+        : r.meta.timeExpired
+          ? "Waktu Habis (Otomatis)"
+          : "Normal";
+      cells.push(cell(statusText, true), r.meta.violations !== undefined ? String(r.meta.violations) : "0");
+    }
     for (const f of cols) {
       const text = formatAnswer(f, r.answers[f.id], "csv");
       cells.push(cell(text, !isNumericField(f))); // angka (mis. -5) tidak diberi awalan

@@ -262,21 +262,45 @@ export const DEFAULT_PROCTORING_SETTINGS: ProctoringSettings = {
   autoSubmitOnDisqualify: true,
 };
 
-/** Batas waktu pengerjaan. Waktu mulai dan tenggat dicatat serta dijaga di server (tabel form_attempts). */
+/** Batas waktu pengerjaan. Waktu mulai dan tenggat dicatat serta dijaga di server (tabel proctoring_sessions). */
 export const timeLimitSettingsSchema = z.object({
   enabled: z.boolean().default(false),
   minutes: z.number().int().min(1).max(720).default(30),
+  timeLimitMinutes: z.number().int().min(1).max(720).optional(),
+  durationMinutes: z.number().int().min(1).max(720).optional(),
 });
-export type TimeLimitSettings = z.infer<typeof timeLimitSettingsSchema>;
-export const DEFAULT_TIME_LIMIT_SETTINGS: TimeLimitSettings = { enabled: false, minutes: 30 };
+export type TimeLimitSettings = {
+  enabled: boolean;
+  minutes: number;
+  timeLimitMinutes: number;
+  durationMinutes: number;
+};
+export const DEFAULT_TIME_LIMIT_SETTINGS: TimeLimitSettings = {
+  enabled: false,
+  minutes: 30,
+  timeLimitMinutes: 30,
+  durationMinutes: 30,
+};
 
 /** Acak urutan soal dan/atau pilihan jawaban per peserta (dilakukan di browser, deterministik per sesi). */
 export const shuffleSettingsSchema = z.object({
   questions: z.boolean().default(false),
   options: z.boolean().default(false),
+  shuffleQuestions: z.boolean().optional(),
+  shuffleOptions: z.boolean().optional(),
 });
-export type ShuffleSettings = z.infer<typeof shuffleSettingsSchema>;
-export const DEFAULT_SHUFFLE_SETTINGS: ShuffleSettings = { questions: false, options: false };
+export type ShuffleSettings = {
+  questions: boolean;
+  options: boolean;
+  shuffleQuestions: boolean;
+  shuffleOptions: boolean;
+};
+export const DEFAULT_SHUFFLE_SETTINGS: ShuffleSettings = {
+  questions: false,
+  options: false,
+  shuffleQuestions: false,
+  shuffleOptions: false,
+};
 
 /** Pengaturan tingkat form (disimpan di forms.settings_json). */
 export const formSettingsSchema = z.object({
@@ -285,11 +309,22 @@ export const formSettingsSchema = z.object({
   proctoring: proctoringSettingsSchema.default(DEFAULT_PROCTORING_SETTINGS),
   // Opsional agar form lama tanpa kunci ini tetap valid; parseSettings mengisi nilai bawaan.
   timeLimit: timeLimitSettingsSchema.optional(),
+  timeLimitMinutes: z.number().int().min(1).max(720).optional(),
+  durationMinutes: z.number().int().min(1).max(720).optional(),
   shuffle: shuffleSettingsSchema.optional(),
+  shuffleQuestions: z.boolean().optional(),
+  shuffleOptions: z.boolean().optional(),
   oneResponsePerAccount: z.boolean().default(false),
   audio: audioSettingsSchema.default(DEFAULT_AUDIO_SETTINGS),
 });
-export type FormSettings = z.infer<typeof formSettingsSchema>;
+export type FormSettings = Omit<z.infer<typeof formSettingsSchema>, "timeLimit" | "shuffle"> & {
+  timeLimit: TimeLimitSettings;
+  shuffle: ShuffleSettings;
+  timeLimitMinutes?: number;
+  durationMinutes?: number;
+  shuffleQuestions?: boolean;
+  shuffleOptions?: boolean;
+};
 export const DEFAULT_SETTINGS: FormSettings = {
   quiz: false,
   allowTabSwitch: true,
@@ -305,9 +340,54 @@ export const resolveShuffle = (s: FormSettings): ShuffleSettings => s.shuffle ??
 
 export function parseSettings(v: unknown): FormSettings {
   const r = formSettingsSchema.safeParse(v ?? {});
-  const res = r.success ? r.data : { ...DEFAULT_SETTINGS };
+  const raw = v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+  const base = r.success ? r.data : { ...DEFAULT_SETTINGS };
+
+  // Sinkronisasi batas waktu (timeLimit / timeLimitMinutes / durationMinutes)
+  const rawTl = raw.timeLimit && typeof raw.timeLimit === "object" ? (raw.timeLimit as Record<string, unknown>) : {};
+  const tlEnabled = Boolean(rawTl.enabled ?? base.timeLimit?.enabled ?? false);
+  const tlMins = Number(
+    raw.timeLimitMinutes ??
+      raw.durationMinutes ??
+      rawTl.timeLimitMinutes ??
+      rawTl.durationMinutes ??
+      rawTl.minutes ??
+      base.timeLimit?.minutes ??
+      30
+  ) || 30;
+  const timeLimitClamped = Math.max(1, Math.min(720, Math.round(tlMins)));
+
+  const timeLimit: TimeLimitSettings = {
+    enabled: tlEnabled,
+    minutes: timeLimitClamped,
+    timeLimitMinutes: timeLimitClamped,
+    durationMinutes: timeLimitClamped,
+  };
+
+  // Sinkronisasi acak soal & opsi (shuffle / shuffleQuestions / shuffleOptions)
+  const rawSh = raw.shuffle && typeof raw.shuffle === "object" ? (raw.shuffle as Record<string, unknown>) : {};
+  const qShuffle = Boolean(raw.shuffleQuestions ?? rawSh.shuffleQuestions ?? rawSh.questions ?? base.shuffle?.questions ?? false);
+  const oShuffle = Boolean(raw.shuffleOptions ?? rawSh.shuffleOptions ?? rawSh.options ?? base.shuffle?.options ?? false);
+
+  const shuffle: ShuffleSettings = {
+    questions: qShuffle,
+    options: oShuffle,
+    shuffleQuestions: qShuffle,
+    shuffleOptions: oShuffle,
+  };
+
+  const res: FormSettings = {
+    ...base,
+    timeLimit,
+    shuffle,
+    timeLimitMinutes: timeLimitClamped,
+    durationMinutes: timeLimitClamped,
+    shuffleQuestions: qShuffle,
+    shuffleOptions: oShuffle,
+  };
+
   // Kompatibilitas mundur: jika allowTabSwitch = false namun proctoring belum disetel khusus
-  if (v && typeof v === "object" && "allowTabSwitch" in v && (v as { allowTabSwitch?: boolean }).allowTabSwitch === false) {
+  if ("allowTabSwitch" in raw && raw.allowTabSwitch === false) {
     if (!res.proctoring.enabled) {
       res.proctoring = { ...res.proctoring, enabled: true };
     }
@@ -315,8 +395,6 @@ export function parseSettings(v: unknown): FormSettings {
   if (res.proctoring.enabled) {
     res.allowTabSwitch = false;
   }
-  res.timeLimit = res.timeLimit ?? DEFAULT_TIME_LIMIT_SETTINGS;
-  res.shuffle = res.shuffle ?? DEFAULT_SHUFFLE_SETTINGS;
   return res;
 }
 
