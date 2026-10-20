@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { isEmailVerified } from "@/lib/auth/verified";
 import { supabaseEnv } from "./env";
 
-/** Menyegarkan sesi di setiap request + proteksi rute /dashboard. */
+/** Menyegarkan sesi pengguna yang login + proteksi rute /dashboard. Pengunjung tanpa cookie sesi dilewati. */
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
 
@@ -12,6 +12,23 @@ export async function updateSession(request: NextRequest) {
     env = supabaseEnv();
   } catch {
     return response; // env belum diisi: biarkan halaman publik tetap jalan
+  }
+
+  const path = request.nextUrl.pathname;
+
+  // Pengunjung anonim (mayoritas peserta form publik) tidak punya cookie sesi Supabase: tidak ada yang perlu
+  // disegarkan, jadi getUser() (panggilan jaringan ke Supabase Auth) dilewati. Yang membawa cookie sesi tetap
+  // diproses penuh di bawah, agar token peserta yang login tetap ter-refresh (blokir tertaut akun, 1 respons per akun).
+  const hasAuthCookie = request.cookies.getAll().some((c) => c.name.startsWith("sb-") && c.name.includes("-auth-token"));
+  if (!hasAuthCookie) {
+    if (path.startsWith("/dashboard")) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/masuk";
+      url.search = "";
+      url.searchParams.set("next", path);
+      return NextResponse.redirect(url);
+    }
+    return response;
   }
 
   const supabase = createServerClient(env.url, env.key, {
@@ -32,7 +49,6 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const path = request.nextUrl.pathname;
   const verified = isEmailVerified(user);
 
   if (!user && path.startsWith("/dashboard")) {

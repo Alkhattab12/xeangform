@@ -4,7 +4,8 @@ import { createHmac } from "node:crypto";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { gradeQuiz } from "@/lib/forms/grade";
-import { formSchemaJson, parseSettings } from "@/lib/forms/schema";
+import { formSchemaJson, parseSettings, resolveTimeLimit } from "@/lib/forms/schema";
+import { TIME_LIMIT_GRACE_MS, deadlineMs } from "@/lib/forms/time-limit";
 import type { UploadedFile } from "@/lib/forms/files";
 import { validateAnswers } from "@/lib/forms/validate";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -24,6 +25,8 @@ export type SubmitResult =
       needsLogin?: boolean;
       alreadySubmitted?: boolean;
       blocked?: boolean;
+      /** Batas waktu (ditambah masa tenggang) sudah lewat: jawaban tidak diterima lagi. */
+      timeExpired?: boolean;
     };
 
 const slugSchema = z.string().regex(/^[a-z0-9-]{6,64}$/);
@@ -35,6 +38,8 @@ const payloadSchema = z.object({
   website: z.string().max(200).optional(), // honeypot
   // Diisi klien saat peserta didiskualifikasi; hanya diterima server jika sesi memang terblokir
   disqualified: z.boolean().optional(),
+  // Diisi klien saat hitung mundur habis (kirim otomatis). Hanya penanda; tenggat tetap diputuskan server.
+  timeUp: z.boolean().optional(),
 });
 
 const GENERIC = "Respons belum tersimpan. Coba kirim lagi sebentar lagi.";
@@ -75,14 +80,18 @@ export async function submitResponse(slug: string, input: unknown): Promise<Subm
       .limit(1);
     if (dup && dup.length > 0) return { ok: true, result: settings.quiz ? scoreOf(dup[0].metadata_json) : undefined };
 
-    // 2b) Proteksi Anti-Cheating (server-authoritative): form ber-proctoring wajib punya sesi aktif di server
+    // 2b) Sesi di server (server-authoritative): wajib untuk form ber-proctoring dan/atau berbatas waktu
+    const procOn = Boolean(settings.proctoring?.enabled);
+    const timeLimit = resolveTimeLimit(settings);
     let disqualified = false;
+    let timeUpAuto = false; // dikirim karena waktu habis (otomatis oleh klien atau pada masa tenggang)
     let procSessionId: string | null = null;
     let procViolationCount = 0;
-    if (settings.proctoring?.enabled) {
+    let timeMeta: Record<string, unknown> | null = null;
+    if (procOn || timeLimit.enabled) {
       const { data: procSession, error: procErr } = await admin
         .from("proctoring_sessions")
-        .select("id,status,violation_count,max_violations")
+        .select("id,status,violation_count,max_violations,started_at")
         .eq("form_id", form.id)
         .eq("session_key", payload.data.clientKey)
         .maybeSingle();
@@ -90,11 +99,11 @@ export async function submitResponse(slug: string, input: unknown): Promise<Subm
       if (!procSession) return { ok: false, error: NO_SESSION };
 
       const sessionBlocked =
-        procSession.status === "blocked" || procSession.violation_count >= procSession.max_violations;
+        procOn && (procSession.status === "blocked" || procSession.violation_count >= procSession.max_violations);
 
       // Blokir tertaut ke akun: sesi baru dari tab/browser lain tidak menghapus blokir peserta yang login
       let accountBlocked = false;
-      if (!sessionBlocked) {
+      if (procOn && !sessionBlocked) {
         try {
           const sbp = await createClient();
           const pu = await getVerifiedUser(sbp);
@@ -128,6 +137,30 @@ export async function submitResponse(slug: string, input: unknown): Promise<Subm
         return { ok: false, error: "Sesi ujian ini sudah berakhir. Muat ulang halaman untuk memulai sesi baru." };
       }
 
+      // Batas waktu: tenggat dihitung dari started_at di server, tidak pernah dari jam peserta.
+      // Berlaku untuk semua jalur kirim (termasuk jawaban parsial peserta yang didiskualifikasi).
+      if (timeLimit.enabled) {
+        const deadline = deadlineMs(procSession.started_at as string, timeLimit.minutes);
+        if (deadline === null) return { ok: false, error: GENERIC };
+        const now = Date.now();
+        if (now > deadline + TIME_LIMIT_GRACE_MS) {
+          return {
+            ok: false,
+            timeExpired: true,
+            error: "Waktu pengerjaan sudah habis, jawaban tidak dapat dikirim lagi.",
+          };
+        }
+        const late = now > deadline; // terkirim pada masa tenggang
+        timeUpAuto = late || (payload.data.timeUp === true && now >= deadline - 10_000);
+        timeMeta = {
+          session_id: procSession.id,
+          minutes: timeLimit.minutes,
+          elapsed_seconds: Math.max(0, Math.round((now - Date.parse(procSession.started_at as string)) / 1000)),
+          auto_submitted: timeUpAuto,
+          within_grace: late,
+        };
+      }
+
       procSessionId = procSession.id as string;
       procViolationCount = procSession.violation_count as number;
     }
@@ -153,13 +186,14 @@ export async function submitResponse(slug: string, input: unknown): Promise<Subm
     // 4) Validasi jawaban terhadap skema tersimpan (bukan skema dari browser)
     const schema = formSchemaJson.safeParse(form.schema_json);
     if (!schema.success) return { ok: false, error: GENERIC };
-    // Diskualifikasi: terima jawaban parsial (kolom wajib dilonggarkan, isian yang tidak valid dibuang)
-    const fieldsForCheck = disqualified
+    // Diskualifikasi atau waktu habis: terima jawaban parsial (kolom wajib dilonggarkan, isian yang tidak valid dibuang)
+    const partial = disqualified || timeUpAuto;
+    const fieldsForCheck = partial
       ? schema.data.fields.map((f) => ({ ...f, required: false }))
       : schema.data.fields;
     const first = validateAnswers(fieldsForCheck, payload.data.answers);
     const checked =
-      !first.ok && disqualified
+      !first.ok && partial
         ? validateAnswers(
             fieldsForCheck,
             Object.fromEntries(Object.entries(payload.data.answers).filter(([id]) => !(id in first.errors)))
@@ -202,7 +236,7 @@ export async function submitResponse(slug: string, input: unknown): Promise<Subm
     // 7) Simpan; sukses hanya dilaporkan setelah baris benar-benar tersimpan
     const metadata: Record<string, unknown> = { client_key: payload.data.clientKey, ip_hash: ipHash };
     if (score) metadata.score = score;
-    if (procSessionId) {
+    if (procSessionId && procOn) {
       // Pelanggaran bersumber dari server (sesi + log), bukan dari klien, sehingga tidak bisa dipalsukan.
       // Bentuk metadata.violations dipertahankan ({ count, events: [{ k, t }] }) agar konsumen lama tetap jalan.
       const { data: vlogs } = await admin
@@ -220,6 +254,7 @@ export async function submitResponse(slug: string, input: unknown): Promise<Subm
       };
       metadata.proctoring = { session_id: procSessionId, violation_count: procViolationCount, disqualified };
     }
+    if (timeMeta) metadata.time_limit = timeMeta;
     if (respondent) metadata.respondent = { email: respondent.email, name: respondent.name };
 
     const { data: inserted, error: insErr } = await admin
@@ -291,10 +326,16 @@ export async function submitResponse(slug: string, input: unknown): Promise<Subm
         await createNotification({
           userId: form.owner_id,
           type: "form_response",
-          title: disqualified ? "Respons Otomatis (Peserta Didiskualifikasi)" : "Respons Baru Diterima",
+          title: disqualified
+            ? "Respons Otomatis (Peserta Didiskualifikasi)"
+            : timeUpAuto
+              ? "Respons Otomatis (Waktu Habis)"
+              : "Respons Baru Diterima",
           message: disqualified
             ? `Jawaban parsial dari ${respondentLabel} pada formulir "${form.title || "Formulir"}" dikirim otomatis karena peserta didiskualifikasi.`
-            : `Terdapat respons baru dari ${respondentLabel} pada formulir "${form.title || "Formulir"}".`,
+            : timeUpAuto
+              ? `Waktu pengerjaan ${respondentLabel} pada formulir "${form.title || "Formulir"}" habis, jawaban yang sudah terisi dikirim otomatis.`
+              : `Terdapat respons baru dari ${respondentLabel} pada formulir "${form.title || "Formulir"}".`,
           link: `/dashboard/forms/${form.id}/responses`,
           metadata: {
             formId: form.id,
@@ -307,7 +348,7 @@ export async function submitResponse(slug: string, input: unknown): Promise<Subm
       }
 
       // 10) Tandai sesi pengawasan ujian sebagai selesai (completed); sesi terblokir tetap terblokir
-      if (settings.proctoring?.enabled) {
+      if (procSessionId) {
         try {
           await admin
             .from("proctoring_sessions")

@@ -6,7 +6,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { getVerifiedUser } from "@/lib/auth/verified-user";
 import { getClientIpHash } from "@/lib/forms/client-ip";
-import { parseSettings } from "@/lib/forms/schema";
+import { parseSettings, resolveTimeLimit } from "@/lib/forms/schema";
+import { deadlineMs } from "@/lib/forms/time-limit";
 import { createNotification } from "@/lib/notifications/create";
 
 const slugSchema = z.string().min(3).max(64);
@@ -38,6 +39,10 @@ export type InitSessionResult =
       violationCount?: number;
       maxViolations?: number;
       isBlocked?: boolean;
+      /** Durasi batas waktu (menit); null/undefined jika form tidak berbatas waktu. */
+      timeLimitMinutes?: number | null;
+      /** Sisa waktu menurut jam server (ms, bisa <= 0). null jika jam belum dimulai (peserta belum menekan Mulai). */
+      remainingMs?: number | null;
     }
   | { ok: false; error: string };
 
@@ -52,15 +57,33 @@ export type RecordViolationResult =
     }
   | { ok: false; blocked?: boolean; error: string; violationCount?: number };
 
+type SessionRow = {
+  id: string;
+  status: string;
+  violation_count: number;
+  max_violations: number;
+  started_at: string;
+  metadata_json: unknown;
+};
+const SESSION_COLS = "id,status,violation_count,max_violations,started_at,metadata_json";
+
+const asRecord = (v: unknown): Record<string, unknown> =>
+  v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+const hasBegun = (row: SessionRow) => typeof asRecord(row.metadata_json).begun_at === "string";
+
 /**
- * Memulai atau memulihkan sesi ujian peserta (Server-Authoritative).
- * Jika sesi sudah terblokir sebelumnya, server langsung mengembalikan status blocked.
- * Untuk peserta yang login, blokir tertaut ke akun: membuka tab/browser baru tidak menghapusnya.
+ * Memulai atau memulihkan sesi peserta (Server-Authoritative). Sesi dibutuhkan oleh form yang
+ * memakai pengawasan (proctoring) dan/atau batas waktu.
+ * - Jika sesi sudah terblokir sebelumnya, server langsung mengembalikan status blocked.
+ * - Untuk peserta yang login, blokir tertaut ke akun: membuka tab/browser baru tidak menghapusnya.
+ * - begin = true dipanggil saat peserta menekan "Mulai": jam ujian (started_at) dicap ulang SEKALI di server.
+ *   Panggilan berikutnya (muat ulang halaman) tidak mengubahnya, sehingga sisa waktu tidak ter-reset.
  */
 export async function initProctoringSession(
   slug: string,
   sessionKey: string,
-  clientInfo?: { respondentName?: string; respondentEmail?: string }
+  clientInfo?: { respondentName?: string; respondentEmail?: string },
+  begin = false
 ): Promise<InitSessionResult> {
   if (!slugSchema.safeParse(slug).success || !sessionKeySchema.safeParse(sessionKey).success) {
     return { ok: false, error: "Parameter sesi tidak valid." };
@@ -69,7 +92,7 @@ export async function initProctoringSession(
   try {
     const admin = createAdminClient();
 
-    // 1. Ambil form dan pengaturan proctoring
+    // 1. Ambil form dan pengaturannya
     const { data: form, error: formErr } = await admin
       .from("forms")
       .select("id,title,status,settings_json,owner_id")
@@ -81,9 +104,49 @@ export async function initProctoringSession(
     }
 
     const settings = parseSettings(form.settings_json);
-    if (!settings.proctoring?.enabled) {
+    const procOn = Boolean(settings.proctoring?.enabled);
+    const timeLimit = resolveTimeLimit(settings);
+    if (!procOn && !timeLimit.enabled) {
       return { ok: true, enabled: false };
     }
+    const limitMinutes = timeLimit.enabled ? timeLimit.minutes : null;
+
+    /** Susun respons dari baris sesi; sisa waktu dihitung dari jam server. */
+    const describe = (row: SessionRow): InitSessionResult => {
+      let remainingMs: number | null = null;
+      if (limitMinutes !== null && hasBegun(row)) {
+        const deadline = deadlineMs(row.started_at, limitMinutes);
+        if (deadline !== null) remainingMs = deadline - Date.now();
+      }
+      return {
+        ok: true,
+        enabled: true,
+        sessionId: row.id,
+        status: row.status as ProctoringSessionStatus,
+        violationCount: row.violation_count,
+        maxViolations: row.max_violations,
+        isBlocked: procOn && (row.status === "blocked" || row.violation_count >= row.max_violations),
+        timeLimitMinutes: limitMinutes,
+        remainingMs,
+      };
+    };
+
+    /** Cap jam mulai sekali saja (compare-and-set pada penanda begun_at). */
+    const startClock = async (row: SessionRow): Promise<SessionRow> => {
+      if (!begin || row.status !== "in_progress" || hasBegun(row)) return row;
+      const nowIso = new Date().toISOString();
+      const { data: updated } = await admin
+        .from("proctoring_sessions")
+        .update({ started_at: nowIso, metadata_json: { ...asRecord(row.metadata_json), begun_at: nowIso } })
+        .eq("id", row.id)
+        .is("metadata_json->>begun_at", null)
+        .select(SESSION_COLS)
+        .maybeSingle();
+      if (updated) return updated as SessionRow;
+      // Kalah balapan (tab lain sudah memulai): pakai nilai terbaru di database
+      const { data: fresh } = await admin.from("proctoring_sessions").select(SESSION_COLS).eq("id", row.id).maybeSingle();
+      return (fresh as SessionRow | null) ?? row;
+    };
 
     // 2. Cek apakah peserta terautentikasi (opsional)
     let respondentId: string | null = null;
@@ -103,7 +166,7 @@ export async function initProctoringSession(
     }
 
     // 2b. Blokir tertaut ke akun: sesi baru (tab/browser lain) tidak menghapus blokir peserta yang login
-    if (respondentId) {
+    if (respondentId && procOn) {
       const { data: blockedByAccount } = await admin
         .from("proctoring_sessions")
         .select("id,violation_count,max_violations")
@@ -122,6 +185,8 @@ export async function initProctoringSession(
           violationCount: blockedByAccount.violation_count,
           maxViolations: blockedByAccount.max_violations,
           isBlocked: true,
+          timeLimitMinutes: limitMinutes,
+          remainingMs: null,
         };
       }
     }
@@ -129,7 +194,7 @@ export async function initProctoringSession(
     // 3. Cek apakah sesi sudah ada
     const { data: existing, error: findErr } = await admin
       .from("proctoring_sessions")
-      .select("id,status,violation_count,max_violations")
+      .select(SESSION_COLS)
       .eq("form_id", form.id)
       .eq("session_key", sessionKey)
       .maybeSingle();
@@ -140,16 +205,7 @@ export async function initProctoringSession(
     }
 
     if (existing) {
-      const isBlocked = existing.status === "blocked" || existing.violation_count >= existing.max_violations;
-      return {
-        ok: true,
-        enabled: true,
-        sessionId: existing.id,
-        status: existing.status as ProctoringSessionStatus,
-        violationCount: existing.violation_count,
-        maxViolations: existing.max_violations,
-        isBlocked,
-      };
+      return describe(await startClock(existing as SessionRow));
     }
 
     // 3b. Pembatas pembuatan sesi baru per IP per form (cegah pembanjiran tabel)
@@ -181,7 +237,7 @@ export async function initProctoringSession(
         max_violations: maxViolations,
         metadata_json: { ip_hash: ipHash },
       })
-      .select("id,status,violation_count,max_violations")
+      .select(SESSION_COLS)
       .single();
 
     if (insErr) {
@@ -189,34 +245,16 @@ export async function initProctoringSession(
       // Jika terjadi bentrok unique concurrent, coba cari lagi
       const { data: retry } = await admin
         .from("proctoring_sessions")
-        .select("id,status,violation_count,max_violations")
+        .select(SESSION_COLS)
         .eq("form_id", form.id)
         .eq("session_key", sessionKey)
         .maybeSingle();
 
-      if (retry) {
-        return {
-          ok: true,
-          enabled: true,
-          sessionId: retry.id,
-          status: retry.status as ProctoringSessionStatus,
-          violationCount: retry.violation_count,
-          maxViolations: retry.max_violations,
-          isBlocked: retry.status === "blocked" || retry.violation_count >= retry.max_violations,
-        };
-      }
+      if (retry) return describe(await startClock(retry as SessionRow));
       return { ok: false, error: "Gagal menginisialisasi sesi pengawasan." };
     }
 
-    return {
-      ok: true,
-      enabled: true,
-      sessionId: created.id,
-      status: created.status as ProctoringSessionStatus,
-      violationCount: created.violation_count,
-      maxViolations: created.max_violations,
-      isBlocked: false,
-    };
+    return describe(await startClock(created as SessionRow));
   } catch (err) {
     console.error("init_proctoring_exception", err);
     return { ok: false, error: "Terjadi kesalahan internal server." };
