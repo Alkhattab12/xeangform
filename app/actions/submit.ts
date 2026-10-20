@@ -27,18 +27,14 @@ export type SubmitResult =
     };
 
 const slugSchema = z.string().regex(/^[a-z0-9-]{6,64}$/);
+// Catatan: data pelanggaran TIDAK diterima dari klien. Untuk form ber-proctoring, hitungan dan
+// kejadian pelanggaran diambil dari sesi + log di server (lihat langkah 7) sehingga tidak bisa dipalsukan.
 const payloadSchema = z.object({
   answers: z.record(z.string(), z.unknown()),
   clientKey: z.string().regex(/^[A-Za-z0-9-]{8,64}$/),
   website: z.string().max(200).optional(), // honeypot
   // Diisi klien saat peserta didiskualifikasi; hanya diterima server jika sesi memang terblokir
   disqualified: z.boolean().optional(),
-  violations: z
-    .object({
-      count: z.number().int().min(0).max(10000),
-      events: z.array(z.object({ k: z.string().max(40), t: z.string().max(40) })).max(100),
-    })
-    .optional(),
 });
 
 const GENERIC = "Respons belum tersimpan. Coba kirim lagi sebentar lagi.";
@@ -81,7 +77,8 @@ export async function submitResponse(slug: string, input: unknown): Promise<Subm
 
     // 2b) Proteksi Anti-Cheating (server-authoritative): form ber-proctoring wajib punya sesi aktif di server
     let disqualified = false;
-    let procMeta: Record<string, unknown> | null = null;
+    let procSessionId: string | null = null;
+    let procViolationCount = 0;
     if (settings.proctoring?.enabled) {
       const { data: procSession, error: procErr } = await admin
         .from("proctoring_sessions")
@@ -131,7 +128,8 @@ export async function submitResponse(slug: string, input: unknown): Promise<Subm
         return { ok: false, error: "Sesi ujian ini sudah berakhir. Muat ulang halaman untuk memulai sesi baru." };
       }
 
-      procMeta = { session_id: procSession.id, violation_count: procSession.violation_count, disqualified };
+      procSessionId = procSession.id as string;
+      procViolationCount = procSession.violation_count as number;
     }
 
     // 3) Pembatasan 1 respons per akun (wajib login)
@@ -204,8 +202,24 @@ export async function submitResponse(slug: string, input: unknown): Promise<Subm
     // 7) Simpan; sukses hanya dilaporkan setelah baris benar-benar tersimpan
     const metadata: Record<string, unknown> = { client_key: payload.data.clientKey, ip_hash: ipHash };
     if (score) metadata.score = score;
-    if (!settings.allowTabSwitch && payload.data.violations) metadata.violations = payload.data.violations;
-    if (procMeta) metadata.proctoring = procMeta;
+    if (procSessionId) {
+      // Pelanggaran bersumber dari server (sesi + log), bukan dari klien, sehingga tidak bisa dipalsukan.
+      // Bentuk metadata.violations dipertahankan ({ count, events: [{ k, t }] }) agar konsumen lama tetap jalan.
+      const { data: vlogs } = await admin
+        .from("proctoring_logs")
+        .select("violation_type,occurred_at")
+        .eq("session_id", procSessionId)
+        .order("occurred_at", { ascending: true })
+        .limit(100);
+      metadata.violations = {
+        count: procViolationCount,
+        events: (vlogs ?? []).map((l: { violation_type: string; occurred_at: string }) => ({
+          k: l.violation_type,
+          t: l.occurred_at,
+        })),
+      };
+      metadata.proctoring = { session_id: procSessionId, violation_count: procViolationCount, disqualified };
+    }
     if (respondent) metadata.respondent = { email: respondent.email, name: respondent.name };
 
     const { data: inserted, error: insErr } = await admin
