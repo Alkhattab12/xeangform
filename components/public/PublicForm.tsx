@@ -89,10 +89,19 @@ export function PublicForm({ slug, title, description, fields, settings, themePr
     title: string;
     message: string;
   } | null>(null);
+  const [procError, setProcError] = useState("");
+  const [starting, setStarting] = useState(false);
   const countRef = useRef(0);
   const events = useRef<{ k: string; t: string }[]>([]);
   const lastAt = useRef(0);
   const okRef = useRef<HTMLButtonElement>(null);
+  const answersRef = useRef<Record<string, unknown>>({});
+  const autoSubmitRef = useRef(false);
+
+  // Jawaban terbaru disimpan di ref agar bisa dikirim otomatis saat peserta didiskualifikasi
+  useEffect(() => {
+    answersRef.current = answers;
+  }, [answers]);
 
   // Inisialisasi session key peserta & verifikasi status awal dari server
   useEffect(() => {
@@ -106,22 +115,53 @@ export function PublicForm({ slug, title, description, fields, settings, themePr
     keyRef.current = k;
 
     if (isProctoring) {
-      const alreadyStarted = sessionStorage.getItem(`xean_started_${slug}`) === "true";
+      const startedKey = `xean_started_${slug}`;
+      const alreadyStarted = sessionStorage.getItem(startedKey) === "true";
       if (alreadyStarted) setExamStarted(true);
 
-      void initProctoringSession(slug, k).then((res) => {
-        if (res.ok && res.enabled) {
-          if (res.isBlocked) {
-            setStatus("blocked");
-            setVCount(res.violationCount ?? res.maxViolations ?? 3);
-          } else if (typeof res.violationCount === "number") {
-            setVCount(res.violationCount);
-            countRef.current = res.violationCount;
+      // Sesi yang gagal diverifikasi tidak boleh berjalan tanpa pengawasan (fail-closed).
+      // Jika belum dimulai, startExam akan memverifikasi ulang dan menampilkan galatnya.
+      const failClosed = (message: string) => {
+        if (!alreadyStarted) return;
+        sessionStorage.removeItem(startedKey);
+        setExamStarted(false);
+        setProcError(message);
+      };
+
+      initProctoringSession(slug, k)
+        .then((res) => {
+          if (!res.ok) {
+            failClosed(res.error);
+            return;
           }
-        }
-      });
+          if (res.enabled) {
+            if (res.isBlocked) {
+              setStatus("blocked");
+              setVCount(res.violationCount ?? res.maxViolations ?? 3);
+            } else if (typeof res.violationCount === "number") {
+              setVCount(res.violationCount);
+              countRef.current = res.violationCount;
+            }
+          }
+        })
+        .catch(() => failClosed("Koneksi ke server pengawasan bermasalah. Coba lagi."));
     }
   }, [slug, isProctoring]);
+
+  // Jika pemilik form mengaktifkan "kirim otomatis saat diskualifikasi", jawaban parsial dikirim sekali
+  const submitDisqualified = useCallback(async () => {
+    if (autoSubmitRef.current || !proctoring.autoSubmitOnDisqualify || !keyRef.current) return;
+    autoSubmitRef.current = true;
+    try {
+      await submitResponse(slug, {
+        answers: answersRef.current,
+        clientKey: keyRef.current,
+        disqualified: true,
+      });
+    } catch (err) {
+      console.error("proctoring_auto_submit_failed", err);
+    }
+  }, [slug, proctoring.autoSubmitOnDisqualify]);
 
   // Melaporkan pelanggaran secara otoritatif ke backend dengan deduplikasi (cooldown 3 detik)
   const reportViolation = useCallback(
@@ -139,7 +179,22 @@ export function PublicForm({ slug, title, description, fields, settings, themePr
       }
 
       try {
-        const res = await recordProctoringViolation(slug, currentKey, type, description);
+        let res = await recordProctoringViolation(slug, currentKey, type, description);
+
+        // Sesi belum terdaftar di server (mis. inisialisasi gagal): daftarkan ulang lalu coba sekali lagi
+        if (!res.ok && !res.blocked) {
+          const re = await initProctoringSession(slug, currentKey);
+          if (re.ok && re.enabled && re.isBlocked) {
+            setStatus("blocked");
+            setWarningModal(null);
+            void submitDisqualified();
+            return;
+          }
+          if (re.ok && re.enabled) {
+            res = await recordProctoringViolation(slug, currentKey, type, description);
+          }
+        }
+
         if (res.ok) {
           const c = res.violationCount;
           const max = res.maxViolations;
@@ -149,6 +204,7 @@ export function PublicForm({ slug, title, description, fields, settings, themePr
           if (res.isBlocked) {
             setStatus("blocked");
             setWarningModal(null);
+            void submitDisqualified();
           } else {
             const title =
               c === 1
@@ -164,12 +220,15 @@ export function PublicForm({ slug, title, description, fields, settings, themePr
         } else if (res.blocked) {
           setStatus("blocked");
           setWarningModal(null);
+          void submitDisqualified();
+        } else {
+          console.error("proctoring_client_report_failed", res.error);
         }
       } catch (err) {
         console.error("proctoring_client_report_failed", err);
       }
     },
-    [isProctoring, examStarted, status, slug]
+    [isProctoring, examStarted, status, slug, submitDisqualified]
   );
 
   // Event listener pengawasan browser (Tab switch, window blur, fullscreen exit, navigasi, copy/paste)
@@ -271,21 +330,58 @@ export function PublicForm({ slug, title, description, fields, settings, themePr
     if (warningModal?.show) okRef.current?.focus();
   }, [warningModal]);
 
+  const leaveFullscreen = () => {
+    if (typeof document !== "undefined" && document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => {});
+    }
+  };
+
   const startExam = async () => {
-    if (proctoring.requireFullscreen && typeof document !== "undefined") {
-      try {
-        await document.documentElement.requestFullscreen();
-      } catch {
-        // Abaikan jika browser membatasi permintaan fullscreen
+    if (starting) return;
+    setStarting(true);
+    setProcError("");
+    try {
+      // Fullscreen harus diminta langsung dari gestur klik, sebelum menunggu server
+      if (proctoring.requireFullscreen && typeof document !== "undefined") {
+        try {
+          await document.documentElement.requestFullscreen();
+        } catch {
+          // Abaikan jika browser membatasi permintaan fullscreen
+        }
       }
+      const currentKey = keyRef.current || crypto.randomUUID();
+      keyRef.current = currentKey;
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem(`xean_session_${slug}`, currentKey);
+      }
+
+      // Fail-closed: pengerjaan hanya dimulai jika sesi pengawasan terdaftar di server
+      const res = await initProctoringSession(slug, currentKey);
+      if (!res.ok) {
+        leaveFullscreen();
+        setProcError(res.error);
+        return;
+      }
+      if (res.enabled && res.isBlocked) {
+        leaveFullscreen();
+        setVCount(res.violationCount ?? res.maxViolations ?? proctoring.maxViolations);
+        setStatus("blocked");
+        return;
+      }
+      if (res.enabled && typeof res.violationCount === "number") {
+        countRef.current = res.violationCount;
+        setVCount(res.violationCount);
+      }
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem(`xean_started_${slug}`, "true");
+      }
+      setExamStarted(true);
+    } catch {
+      leaveFullscreen();
+      setProcError("Koneksi bermasalah. Sesi pengawasan belum bisa dimulai, coba lagi.");
+    } finally {
+      setStarting(false);
     }
-    const currentKey = keyRef.current || crypto.randomUUID();
-    keyRef.current = currentKey;
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem(`xean_started_${slug}`, "true");
-    }
-    setExamStarted(true);
-    void initProctoringSession(slug, currentKey);
   };
 
   // Setelah pindah halaman: fokus ke soal bermasalah (jika ada), kalau tidak gulir ke atas
@@ -411,10 +507,21 @@ export function PublicForm({ slug, title, description, fields, settings, themePr
     setErrors({});
     setFormError("");
     setResult(null);
-    keyRef.current = null;
+
+    // Respons berikutnya memakai kunci sesi baru. Pada form ber-proctoring peserta kembali ke briefing,
+    // sehingga startExam mendaftarkan sesi baru di server sebelum pengerjaan dimulai.
+    const nk = crypto.randomUUID();
+    keyRef.current = nk;
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem(`xean_session_${slug}`, nk);
+      sessionStorage.removeItem(`xean_started_${slug}`);
+    }
+    autoSubmitRef.current = false;
     countRef.current = 0;
     events.current = [];
     setVCount(0);
+    setProcError("");
+    setExamStarted(!isProctoring);
     setPageIdx(0);
     setStatus("idle");
   }
@@ -486,13 +593,20 @@ export function PublicForm({ slug, title, description, fields, settings, themePr
           </ul>
         </div>
 
+        {procError && (
+          <div role="alert" className="nb-panel border-[3px] bg-orange p-4 font-bold text-ink">{procError}</div>
+        )}
+
         <div className="pt-2">
           <button
             type="button"
             onClick={startExam}
+            disabled={starting}
             className="nb-btn nb-btn-lg w-full flex items-center justify-center gap-2"
           >
-            {proctoring.requireFullscreen ? (
+            {starting ? (
+              <>Memverifikasi sesi…</>
+            ) : proctoring.requireFullscreen ? (
               <>
                 <Maximize2 size={18} aria-hidden="true" /> Masuk Layar Penuh & Mulai Ujian
               </>
