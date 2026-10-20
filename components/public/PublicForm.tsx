@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { submitResponse, type QuizResult } from "@/app/actions/submit";
 import { useBusyOverlay } from "@/components/ui/LoadingProvider";
 import { firstErrorFieldId, pageIndexOf, splitPages } from "@/lib/forms/pages";
-import { isInputType, type FormField, type FormSettings } from "@/lib/forms/schema";
+import { isInputType, parseSettings, type FormField, type FormSettings } from "@/lib/forms/schema";
 import { DEFAULT_PROCTORING_SETTINGS } from "@/lib/forms/schema";
 import { fieldStyleVars, labelSizeClass } from "@/lib/forms/theme";
 import { OTHER, validateAnswers } from "@/lib/forms/validate";
@@ -50,6 +50,9 @@ const groupCls = "m-0 min-w-0 border-0 p-0";
 
 const prefersReduced = () => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
+/** Perangkat sentuh (HP/tablet): perangkat input utamanya jari, bukan mouse/trackpad. */
+const isTouchDevice = () => typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches;
+
 /** Menggulir ke kartu soal lalu memberi fokus ke kontrolnya. */
 function focusField(fid: string) {
   const cardEl = document.getElementById(`card-${fid}`);
@@ -58,10 +61,11 @@ function focusField(fid: string) {
   el?.focus({ preventScroll: true });
 }
 
-export function PublicForm({ slug, title, description, fields, settings, themePreset }: Props) {
+export function PublicForm({ slug, title, description, fields, settings: rawSettings, themePreset }: Props) {
+  // Satu sumber kebenaran pengawasan: allowTabSwitch = false (versi lama) otomatis berarti proctoring aktif
+  const settings = useMemo(() => parseSettings(rawSettings), [rawSettings]);
   const proctoring = settings.proctoring ?? DEFAULT_PROCTORING_SETTINGS;
   const isProctoring = Boolean(proctoring.enabled);
-  const enforce = !settings.allowTabSwitch || isProctoring;
 
   const pages = useMemo(() => splitPages(fields), [fields]);
   const [pageIdx, setPageIdx] = useState(0);
@@ -92,7 +96,6 @@ export function PublicForm({ slug, title, description, fields, settings, themePr
   const [procError, setProcError] = useState("");
   const [starting, setStarting] = useState(false);
   const countRef = useRef(0);
-  const events = useRef<{ k: string; t: string }[]>([]);
   const lastAt = useRef(0);
   const okRef = useRef<HTMLButtonElement>(null);
   const answersRef = useRef<Record<string, unknown>>({});
@@ -174,10 +177,6 @@ export function PublicForm({ slug, title, description, fields, settings, themePr
       const currentKey = keyRef.current || crypto.randomUUID();
       keyRef.current = currentKey;
 
-      if (events.current.length < 50) {
-        events.current.push({ k: type, t: new Date(now).toISOString() });
-      }
-
       try {
         let res = await recordProctoringViolation(slug, currentKey, type, description);
 
@@ -233,98 +232,75 @@ export function PublicForm({ slug, title, description, fields, settings, themePr
 
   // Event listener pengawasan browser (Tab switch, window blur, fullscreen exit, navigasi, copy/paste)
   useEffect(() => {
-    if (!enforce || status === "done" || status === "blocked") return;
+    if (!isProctoring || !examStarted || status === "done" || status === "blocked") return;
 
-    if (isProctoring) {
-      if (!examStarted) return;
+    const touch = isTouchDevice();
 
-      const onVisibility = () => {
-        if (document.hidden && proctoring.detectTabSwitch) {
-          void reportViolation("tab_switch", "Berpindah ke tab browser lain");
+    const onVisibility = () => {
+      if (!document.hidden) return;
+      // Di HP, berpindah aplikasi hanya terlihat lewat visibilitychange, jadi pengaturan "blur"
+      // juga dipetakan ke sini agar pemilik form yang mengaktifkannya tetap terlindungi.
+      if (proctoring.detectTabSwitch || (touch && proctoring.detectWindowBlur)) {
+        void reportViolation("tab_switch", touch ? "Berpindah ke tab atau aplikasi lain" : "Berpindah ke tab browser lain");
+      }
+    };
+
+    const onBlur = () => {
+      if (!proctoring.detectWindowBlur) return;
+      // Di perangkat sentuh, blur terpicu keyboard layar, bilah notifikasi, dan gestur sistem (false positive).
+      if (touch) return;
+      // Fokus pindah ke iframe di halaman ini (mis. pemutar tersemat), bukan keluar dari jendela.
+      if (document.activeElement?.tagName === "IFRAME") return;
+      void reportViolation("window_blur", "Jendela browser kehilangan fokus aktif");
+    };
+
+    const onFullscreenChange = () => {
+      if (proctoring.requireFullscreen && proctoring.detectFullscreenExit) {
+        if (!document.fullscreenElement) {
+          void reportViolation("fullscreen_exit", "Keluar dari mode layar penuh (fullscreen)");
         }
-      };
+      }
+    };
 
-      const onBlur = () => {
-        if (proctoring.detectWindowBlur) {
-          void reportViolation("window_blur", "Jendela browser kehilangan fokus aktif");
-        }
-      };
+    const preventClipboard = (e: Event) => {
+      if (proctoring.restrictCopyPaste) {
+        e.preventDefault();
+      }
+    };
 
-      const onFullscreenChange = () => {
-        if (proctoring.requireFullscreen && proctoring.detectFullscreenExit) {
-          if (!document.fullscreenElement) {
-            void reportViolation("fullscreen_exit", "Keluar dari mode layar penuh (fullscreen)");
-          }
-        }
-      };
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (proctoring.detectNavigation) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
 
-      const preventClipboard = (e: Event) => {
-        if (proctoring.restrictCopyPaste) {
-          e.preventDefault();
-        }
-      };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("blur", onBlur);
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    window.addEventListener("beforeunload", onBeforeUnload);
 
-      const onBeforeUnload = (e: BeforeUnloadEvent) => {
-        if (proctoring.detectNavigation) {
-          e.preventDefault();
-          e.returnValue = "";
-        }
-      };
+    if (proctoring.restrictCopyPaste) {
+      document.addEventListener("copy", preventClipboard);
+      document.addEventListener("cut", preventClipboard);
+      document.addEventListener("paste", preventClipboard);
+      document.addEventListener("contextmenu", preventClipboard);
+    }
 
-      document.addEventListener("visibilitychange", onVisibility);
-      window.addEventListener("blur", onBlur);
-      document.addEventListener("fullscreenchange", onFullscreenChange);
-      window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("blur", onBlur);
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      window.removeEventListener("beforeunload", onBeforeUnload);
 
       if (proctoring.restrictCopyPaste) {
-        document.addEventListener("copy", preventClipboard);
-        document.addEventListener("cut", preventClipboard);
-        document.addEventListener("paste", preventClipboard);
-        document.addEventListener("contextmenu", preventClipboard);
+        document.removeEventListener("copy", preventClipboard);
+        document.removeEventListener("cut", preventClipboard);
+        document.removeEventListener("paste", preventClipboard);
+        document.removeEventListener("contextmenu", preventClipboard);
       }
-
-      return () => {
-        document.removeEventListener("visibilitychange", onVisibility);
-        window.removeEventListener("blur", onBlur);
-        document.removeEventListener("fullscreenchange", onFullscreenChange);
-        window.removeEventListener("beforeunload", onBeforeUnload);
-
-        if (proctoring.restrictCopyPaste) {
-          document.removeEventListener("copy", preventClipboard);
-          document.removeEventListener("cut", preventClipboard);
-          document.removeEventListener("paste", preventClipboard);
-          document.removeEventListener("contextmenu", preventClipboard);
-        }
-      };
-    } else {
-      // Fallback mode kompatibilitas lama
-      const recordLegacy = (k: "tab" | "window") => {
-        const now = Date.now();
-        if (now - lastAt.current < 1000) return;
-        lastAt.current = now;
-        countRef.current += 1;
-        if (events.current.length < 50) events.current.push({ k, t: new Date(now).toISOString() });
-        setVCount(countRef.current);
-        setWarningModal({
-          show: true,
-          count: countRef.current,
-          max: 3,
-          title: "Kamu meninggalkan halaman ini",
-          message: "Form ini tidak mengizinkan berpindah tab atau meminimalkan jendela. Pelanggaran dicatat.",
-        });
-      };
-      const onVis = () => {
-        if (document.hidden) recordLegacy("tab");
-      };
-      const onB = () => recordLegacy("window");
-      document.addEventListener("visibilitychange", onVis);
-      window.addEventListener("blur", onB);
-      return () => {
-        document.removeEventListener("visibilitychange", onVis);
-        window.removeEventListener("blur", onB);
-      };
-    }
-  }, [enforce, isProctoring, examStarted, status, proctoring, reportViolation]);
+    };
+  }, [isProctoring, examStarted, status, proctoring, reportViolation]);
 
   useEffect(() => {
     if (warningModal?.show) okRef.current?.focus();
@@ -466,11 +442,11 @@ export function PublicForm({ slug, title, description, fields, settings, themePr
     if (!keyRef.current) keyRef.current = crypto.randomUUID(); // kunci tetap sama saat kirim ulang
 
     try {
+      // Data pelanggaran tidak dikirim dari klien: server membacanya dari sesi dan log proctoring
       const res = await submitResponse(slug, {
         answers,
         clientKey: keyRef.current,
         website: hp,
-        violations: enforce ? { count: countRef.current, events: events.current } : undefined,
       });
       if (res.ok) {
         if (settings.audio?.sfxEnabled) playTactileSfx("success");
@@ -518,7 +494,6 @@ export function PublicForm({ slug, title, description, fields, settings, themePr
     }
     autoSubmitRef.current = false;
     countRef.current = 0;
-    events.current = [];
     setVCount(0);
     setProcError("");
     setExamStarted(!isProctoring);
@@ -922,23 +897,19 @@ export function PublicForm({ slug, title, description, fields, settings, themePr
           </div>
         )}
 
-        {enforce && (
+        {isProctoring && (
           <div role="note" className="nb-panel border-[3px] bg-lavender p-5 text-ink">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <ShieldAlert className="text-orange shrink-0" size={20} aria-hidden="true" />
-                <p className="font-display font-bold">
-                  {isProctoring ? "Pengawasan Anti-Cheating & Tab Lock Aktif" : "Pengawasan Aktif"}
-                </p>
+                <p className="font-display font-bold">Pengawasan Anti-Cheating & Tab Lock Aktif</p>
               </div>
               <span className="nb-mono text-xs border-2 border-line px-2 py-0.5 bg-surface font-bold">
                 Pelanggaran: {vCount}/{proctoring.maxViolations}
               </span>
             </div>
             <p className="mt-2 text-sm leading-relaxed text-ink/90">
-              {isProctoring
-                ? `Tetap fokus pada form ini. Berpindah tab, meminimalkan jendela, atau keluar dari fullscreen akan dicatat. Melebihi ${proctoring.maxViolations} kali pelanggaran akan otomatis memblokir sesi Anda.`
-                : "Jangan berpindah tab atau meminimalkan jendela selama mengisi. Pelanggaran dicatat dan dapat dilihat pembuat form."}
+              {`Tetap fokus pada form ini. Berpindah tab, meminimalkan jendela, atau keluar dari fullscreen akan dicatat. Melebihi ${proctoring.maxViolations} kali pelanggaran akan otomatis memblokir sesi Anda.`}
             </p>
           </div>
         )}
