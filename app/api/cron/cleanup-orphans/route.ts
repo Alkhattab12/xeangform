@@ -9,11 +9,15 @@ export const dynamic = "force-dynamic";
  * pada tabel submission_files dan berusia > 24 jam.
  */
 export async function GET(request: NextRequest) {
-  // Verifikasi token rahasia CRON jika dikonfigurasi di environment
-  const authHeader = request.headers.get("authorization");
+  // Fail-closed: Pastikan CRON_SECRET telah dikonfigurasi di environment
   const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) {
+    return NextResponse.json({ ok: false, error: "CRON_SECRET belum dikonfigurasi" }, { status: 500 });
+  }
 
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  // Verifikasi token rahasia CRON Vercel
+  const authHeader = request.headers.get("authorization");
+  if (authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ ok: false, error: "Akses tidak diizinkan." }, { status: 401 });
   }
 
