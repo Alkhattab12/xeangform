@@ -1,7 +1,5 @@
 "use server";
 
-import { createHmac } from "node:crypto";
-import { headers } from "next/headers";
 import { z } from "zod";
 import { gradeQuiz } from "@/lib/forms/grade";
 import { formSchemaJson, parseSettings, resolveTimeLimit } from "@/lib/forms/schema";
@@ -9,7 +7,7 @@ import { TIME_LIMIT_GRACE_MS, deadlineMs } from "@/lib/forms/time-limit";
 import type { UploadedFile } from "@/lib/forms/files";
 import { validateAnswers } from "@/lib/forms/validate";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { serviceRoleKey } from "@/lib/supabase/env";
+import { getClientIpHash } from "@/lib/forms/client-ip";
 import { createClient } from "@/lib/supabase/server";
 import { getVerifiedUser } from "@/lib/auth/verified-user";
 import { createNotification } from "@/lib/notifications/create";
@@ -202,9 +200,7 @@ export async function submitResponse(slug: string, input: unknown): Promise<Subm
     if (!checked.ok) return { ok: false, fieldErrors: checked.errors };
 
     // 5) Rate limit dasar per IP per form (IP disimpan sebagai hash)
-    const h = await headers();
-    const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || "unknown";
-    const ipHash = createHmac("sha256", serviceRoleKey() ?? "dev").update(ip).digest("hex").slice(0, 32);
+    const ipHash = await getClientIpHash();
     const since = new Date(Date.now() - 60_000).toISOString();
     const { count } = await admin
       .from("form_submissions")
