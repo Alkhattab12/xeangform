@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "node ./scripts/lint.js",
     "typecheck": "tsc --noEmit",
-    "test": "node ./scripts/test-runner.js"
+    "test": "node ./scripts/test-runner.js",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

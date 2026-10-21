@@ -30,9 +30,6 @@ run("npx tsx --conditions react-server lib/forms/selftest-cleanup.ts", "Selftest
 // 5. Selftest Keamanan
 run("npx tsx --conditions react-server lib/forms/selftest-security.ts", "Selftest Keamanan Audio & Storage");
 
-// 6. Playwright Test Suite (Server & Browser E2E)
-run("npx playwright test", "Playwright Full E2E Test Suite (Server, Browser, Proctoring, Timeout & Shuffle)");
-
 console.log("\n=============================================");
 console.log("🎉 SEMUA PENGUJIAN OTOMATIS BERHASIL (100%)");
 console.log("=============================================\n");
