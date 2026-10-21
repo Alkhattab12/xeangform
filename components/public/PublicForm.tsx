@@ -75,6 +75,9 @@ export function PublicForm({ slug, title, description, fields, settings: rawSett
   const [sessionKey, setSessionKey] = useState<string>("");
   const keyRef = useRef<string | null>(null);
 
+  const shuffleOn = Boolean(settings.shuffle?.questions || settings.shuffle?.options);
+  const orderReady = !shuffleOn || sessionKey !== "";
+
   // Pengacakan deterministik (seeded): urutan konsisten per peserta meski halaman di-refresh
   const shuffleSeed = useMemo(() => `${slug}:${sessionKey || "init"}`, [slug, sessionKey]);
   const rawPages = useMemo(() => splitPages(fields), [fields]);
@@ -722,6 +725,8 @@ export function PublicForm({ slug, title, description, fields, settings: rawSett
       </>
     );
   }
+
+  if (!orderReady) return <div className="nb-panel nb-panel-strong p-6" role="status" aria-busy="true">Menyiapkan formulir…</div>;
 
   const reqMark = (f: FormField) =>
     f.required ? (
